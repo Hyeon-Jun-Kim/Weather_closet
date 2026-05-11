@@ -1,0 +1,127 @@
+import Foundation
+import SwiftData
+
+@Model
+final class ClothingModel {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var brand: String
+    var categoryRaw: String
+    var materialRaw: String
+    var color: String
+    var sizeLabel: String
+    var ratingValue: Int
+    var review: String
+    var wearCount: Int
+    var purchaseDate: Date?
+    var purchasePrice: Double?
+    var purchasePlace: String
+    var imageURLs: [String]
+    var tags: [String]
+    var isActive: Bool
+
+    @Relationship(deleteRule: .cascade) var alterations: [AlterationModel] = []
+
+    init(entity: ClothingEntity) {
+        self.id = entity.id
+        self.name = entity.name
+        self.brand = entity.brand
+        self.categoryRaw = entity.category.rawValue
+        self.materialRaw = entity.material.rawValue
+        self.color = entity.color
+        self.sizeLabel = entity.size.label
+        self.ratingValue = entity.rating
+        self.review = entity.review
+        self.wearCount = entity.wearCount
+        self.purchaseDate = entity.purchaseDate
+        self.purchasePrice = entity.purchasePrice
+        self.purchasePlace = entity.purchasePlace
+        self.imageURLs = entity.imageURLs
+        self.tags = entity.tags
+        self.isActive = entity.isActive
+    }
+
+    func update(from entity: ClothingEntity) {
+        name = entity.name
+        brand = entity.brand
+        categoryRaw = entity.category.rawValue
+        materialRaw = entity.material.rawValue
+        color = entity.color
+        sizeLabel = entity.size.label
+        ratingValue = entity.rating
+        review = entity.review
+        wearCount = entity.wearCount
+        purchaseDate = entity.purchaseDate
+        purchasePrice = entity.purchasePrice
+        purchasePlace = entity.purchasePlace
+        imageURLs = entity.imageURLs
+        tags = entity.tags
+        isActive = entity.isActive
+    }
+
+    func toEntity() -> ClothingEntity {
+        ClothingEntity(
+            id: id,
+            name: name,
+            brand: brand,
+            category: ClothingCategory(rawValue: categoryRaw) ?? .etc,
+            material: ClothingMaterial(rawValue: materialRaw) ?? .etc,
+            color: color,
+            size: ClothingSize(label: sizeLabel),
+            alterationHistory: alterations.map { $0.toEntity() },
+            rating: ratingValue,
+            review: review,
+            wearCount: wearCount,
+            purchaseDate: purchaseDate,
+            purchasePrice: purchasePrice,
+            purchasePlace: purchasePlace,
+            imageURLs: imageURLs,
+            tags: tags,
+            isActive: isActive
+        )
+    }
+}
+
+@Model
+final class AlterationModel {
+    @Attribute(.unique) var id: UUID
+    var date: Date
+    var shop: String
+    var alterationDescription: String
+    var cost: Double
+
+    init(entity: AlterationRecord) {
+        self.id = entity.id
+        self.date = entity.date
+        self.shop = entity.shop
+        self.alterationDescription = entity.description
+        self.cost = entity.cost
+    }
+
+    func toEntity() -> AlterationRecord {
+        AlterationRecord(id: id, date: date, shop: shop, description: alterationDescription, cost: cost)
+    }
+}
+
+@Model
+final class OutfitModel {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var clothingIDs: [UUID]
+    var tags: [String]
+    var note: String
+    var createdAt: Date
+
+    init(entity: OutfitEntity) {
+        self.id = entity.id
+        self.name = entity.name
+        self.clothingIDs = entity.clothingIDs
+        self.tags = entity.tags
+        self.note = entity.note
+        self.createdAt = entity.createdAt
+    }
+
+    func toEntity() -> OutfitEntity {
+        OutfitEntity(id: id, name: name, clothingIDs: clothingIDs, tags: tags, note: note, createdAt: createdAt)
+    }
+}
