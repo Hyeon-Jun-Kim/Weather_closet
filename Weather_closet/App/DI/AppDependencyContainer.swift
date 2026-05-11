@@ -6,6 +6,7 @@ final class AppDependencyContainer {
     // MARK: - Infrastructure
     private lazy var apiClient = APIClient()
     private lazy var persistenceStack = PersistenceStack()
+    lazy var locationService = LocationService()
 
     // MARK: - Data Sources
     private lazy var weatherRemoteDataSource = WeatherRemoteDataSource(apiClient: apiClient)
@@ -28,6 +29,8 @@ final class AppDependencyContainer {
     private lazy var checkUmbrellaUseCase = CheckUmbrellaUseCase(repository: weatherRepository)
     private lazy var addClothingUseCase = AddClothingUseCase(repository: closetRepository)
     private lazy var getClothingListUseCase = GetClothingListUseCase(repository: closetRepository)
+    private lazy var deleteClothingUseCase = DeleteClothingUseCase(repository: closetRepository)
+    private lazy var updateClothingUseCase = UpdateClothingUseCase(repository: closetRepository)
     private lazy var recordOutfitUseCase = RecordOutfitUseCase(repository: calendarRepository)
     private lazy var getCalendarEventsUseCase = GetCalendarEventsUseCase(repository: calendarRepository)
     private lazy var getAnalysisUseCase = GetAnalysisUseCase(
@@ -39,21 +42,25 @@ final class AppDependencyContainer {
     func makeHomeViewModel() -> HomeViewModel {
         HomeViewModel(
             fetchWeatherUseCase: fetchWeatherUseCase,
-            checkUmbrellaUseCase: checkUmbrellaUseCase
+            checkUmbrellaUseCase: checkUmbrellaUseCase,
+            locationService: locationService
         )
     }
 
     func makeCalendarViewModel() -> CalendarViewModel {
         CalendarViewModel(
             recordOutfitUseCase: recordOutfitUseCase,
-            getCalendarEventsUseCase: getCalendarEventsUseCase
+            getCalendarEventsUseCase: getCalendarEventsUseCase,
+            getClothingListUseCase: getClothingListUseCase
         )
     }
 
     func makeClosetViewModel() -> ClosetViewModel {
         ClosetViewModel(
             addClothingUseCase: addClothingUseCase,
-            getClothingListUseCase: getClothingListUseCase
+            getClothingListUseCase: getClothingListUseCase,
+            deleteClothingUseCase: deleteClothingUseCase,
+            updateClothingUseCase: updateClothingUseCase
         )
     }
 

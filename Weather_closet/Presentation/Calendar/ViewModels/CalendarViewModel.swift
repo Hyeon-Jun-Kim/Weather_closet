@@ -5,20 +5,35 @@ import Combine
 final class CalendarViewModel: ObservableObject {
     @Published var selectedDate: Date = Date()
     @Published var eventsForSelectedDate: [CalendarEventEntity] = []
+    @Published var clothingList: [ClothingEntity] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
 
     private let recordOutfitUseCase: RecordOutfitUseCase
     private let getCalendarEventsUseCase: GetCalendarEventsUseCase
+    private let getClothingListUseCase: GetClothingListUseCase
 
-    init(recordOutfitUseCase: RecordOutfitUseCase, getCalendarEventsUseCase: GetCalendarEventsUseCase) {
+    init(
+        recordOutfitUseCase: RecordOutfitUseCase,
+        getCalendarEventsUseCase: GetCalendarEventsUseCase,
+        getClothingListUseCase: GetClothingListUseCase
+    ) {
         self.recordOutfitUseCase = recordOutfitUseCase
         self.getCalendarEventsUseCase = getCalendarEventsUseCase
+        self.getClothingListUseCase = getClothingListUseCase
     }
 
     func loadEvents(for date: Date) async {
         do {
             eventsForSelectedDate = try await getCalendarEventsUseCase.execute(for: date)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func loadClothingList() async {
+        do {
+            clothingList = try await getClothingListUseCase.execute()
         } catch {
             errorMessage = error.localizedDescription
         }
