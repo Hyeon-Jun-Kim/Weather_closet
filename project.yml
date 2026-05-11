@@ -12,6 +12,7 @@ settings:
     ENABLE_PREVIEWS: "YES"
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: U4STX4QR4M
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
 
 packages:
   LookinServer:
@@ -49,6 +50,7 @@ targets:
         LSRequiresIPhoneOS: true
         UIRequiredDeviceCapabilities:
           - arm64
+        UIRequiresFullScreen: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         NSLocationWhenInUseUsageDescription: "날씨 정보를 위해 현재 위치가 필요합니다."

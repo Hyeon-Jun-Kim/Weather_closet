@@ -8,8 +8,8 @@ final class CheckUmbrellaUseCase {
         self.repository = repository
     }
 
-    func execute(location: String) async throws -> UmbrellaRecommendation {
-        let weather = try await repository.fetchCurrentWeather(location: location)
+    func execute(latitude: Double, longitude: Double) async throws -> UmbrellaRecommendation {
+        let weather = try await repository.fetchCurrentWeather(latitude: latitude, longitude: longitude, locationName: "")
         return recommendation(for: weather.precipitationProbability, amount: weather.precipitationAmount)
     }
 

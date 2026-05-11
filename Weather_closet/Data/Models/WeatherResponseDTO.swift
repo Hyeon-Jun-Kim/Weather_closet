@@ -66,9 +66,9 @@ struct DailyForecastDTO: Decodable {
 }
 
 extension WeatherResponseDTO {
-    func toEntity() -> WeatherEntity {
+    func toEntity(locationName: String) -> WeatherEntity {
         WeatherEntity(
-            location: timezone,
+            location: locationName.isEmpty ? timezone : locationName,
             temperature: current.temperature2m,
             feelsLike: current.apparentTemperature,
             humidity: current.relativeHumidity2m,

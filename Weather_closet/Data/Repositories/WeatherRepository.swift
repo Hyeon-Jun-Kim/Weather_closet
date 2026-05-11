@@ -8,13 +8,13 @@ final class WeatherRepository: WeatherRepositoryProtocol {
         self.remoteDataSource = remoteDataSource
     }
 
-    func fetchCurrentWeather(location: String) async throws -> WeatherEntity {
-        let dto = try await remoteDataSource.fetchCurrentWeather(location: location)
-        return dto.toEntity()
+    func fetchCurrentWeather(latitude: Double, longitude: Double, locationName: String) async throws -> WeatherEntity {
+        let dto = try await remoteDataSource.fetchCurrentWeather(latitude: latitude, longitude: longitude)
+        return dto.toEntity(locationName: locationName)
     }
 
-    func fetchForecast(location: String, days: Int) async throws -> [DailyForecast] {
-        let dto = try await remoteDataSource.fetchForecast(location: location, days: days)
+    func fetchForecast(latitude: Double, longitude: Double, days: Int) async throws -> [DailyForecast] {
+        let dto = try await remoteDataSource.fetchForecast(latitude: latitude, longitude: longitude, days: days)
         return dto.map { $0.toForecast() }
     }
 

@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 protocol WeatherRepositoryProtocol {
-    func fetchCurrentWeather(location: String) async throws -> WeatherEntity
-    func fetchForecast(location: String, days: Int) async throws -> [DailyForecast]
+    func fetchCurrentWeather(latitude: Double, longitude: Double, locationName: String) async throws -> WeatherEntity
+    func fetchForecast(latitude: Double, longitude: Double, days: Int) async throws -> [DailyForecast]
     func fetchRouteWeather(route: RouteWeatherEntity) async throws -> RouteWeatherEntity
 }

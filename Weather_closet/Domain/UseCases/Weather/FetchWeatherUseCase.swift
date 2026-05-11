@@ -8,11 +8,11 @@ final class FetchWeatherUseCase {
         self.repository = repository
     }
 
-    func execute(location: String) async throws -> WeatherEntity {
-        try await repository.fetchCurrentWeather(location: location)
+    func execute(latitude: Double, longitude: Double, locationName: String) async throws -> WeatherEntity {
+        try await repository.fetchCurrentWeather(latitude: latitude, longitude: longitude, locationName: locationName)
     }
 
-    func executeForecast(location: String, days: Int = 7) async throws -> [DailyForecast] {
-        try await repository.fetchForecast(location: location, days: days)
+    func executeForecast(latitude: Double, longitude: Double, days: Int = 7) async throws -> [DailyForecast] {
+        try await repository.fetchForecast(latitude: latitude, longitude: longitude, days: days)
     }
 }

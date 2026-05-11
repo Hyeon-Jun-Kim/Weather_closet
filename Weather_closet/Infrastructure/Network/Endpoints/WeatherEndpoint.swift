@@ -1,24 +1,20 @@
 import Foundation
 
-// Uses Open-Meteo API (free, no API key required)
 enum WeatherEndpoint: APIEndpoint {
-    case current(location: String)
-    case forecast(location: String, days: Int)
+    case current(latitude: Double, longitude: Double)
+    case forecast(latitude: Double, longitude: Double, days: Int)
 
     var baseURL: String { "https://api.open-meteo.com" }
-
     var path: String { "/v1/forecast" }
-
     var method: HTTPMethod { .get }
-
     var headers: [String: String] { [:] }
 
     var queryItems: [URLQueryItem] {
-        let coords = parseLocation(location)
+        let (lat, lon) = coordinates
         var items: [URLQueryItem] = [
-            URLQueryItem(name: "latitude", value: String(coords.lat)),
-            URLQueryItem(name: "longitude", value: String(coords.lon)),
-            URLQueryItem(name: "timezone", value: "Asia/Seoul"),
+            URLQueryItem(name: "latitude", value: String(lat)),
+            URLQueryItem(name: "longitude", value: String(lon)),
+            URLQueryItem(name: "timezone", value: "auto"),
             URLQueryItem(name: "current", value: [
                 "temperature_2m",
                 "apparent_temperature",
@@ -29,7 +25,7 @@ enum WeatherEndpoint: APIEndpoint {
                 "weather_code"
             ].joined(separator: ",")),
         ]
-        if case .forecast(_, let days) = self {
+        if case .forecast(_, _, let days) = self {
             items.append(URLQueryItem(name: "forecast_days", value: String(days)))
             items.append(URLQueryItem(name: "daily", value: [
                 "temperature_2m_max",
@@ -41,15 +37,10 @@ enum WeatherEndpoint: APIEndpoint {
         return items
     }
 
-    private var location: String {
+    private var coordinates: (lat: Double, lon: Double) {
         switch self {
-        case .current(let loc):    return loc
-        case .forecast(let loc, _): return loc
+        case .current(let lat, let lon):      return (lat, lon)
+        case .forecast(let lat, let lon, _):  return (lat, lon)
         }
-    }
-
-    private func parseLocation(_ location: String) -> (lat: Double, lon: Double) {
-        // Default to Seoul coordinates
-        return (37.5665, 126.9780)
     }
 }

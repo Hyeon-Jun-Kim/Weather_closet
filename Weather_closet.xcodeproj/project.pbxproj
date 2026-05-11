@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		04E520964387BEC0783CD2D8 /* ImageStorageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA833C87B4CE1A74A0D241CA /* ImageStorageService.swift */; };
 		0EA90766C985AE5F6052507C /* WeatherResponseDTO.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0816CA3BED33F7BC042F3B /* WeatherResponseDTO.swift */; };
 		151DE1246303D3E9B22ADC51 /* GetClothingListUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADCA623BE9E9D7D335B07A87 /* GetClothingListUseCase.swift */; };
 		179CBECDF490CCB7BA7BAC0A /* CheckUmbrellaUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763C0857A483AF2405DE1A60 /* CheckUmbrellaUseCase.swift */; };
@@ -21,6 +22,7 @@
 		3C380256BB5EB95F7AB4CC95 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7AAF6C936A903899A46B5236 /* Assets.xcassets */; };
 		3ED3639FAC836C8DA5AAA327 /* ClosetLocalDataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB01A0A15E9C5B9B4BA2BBE2 /* ClosetLocalDataSource.swift */; };
 		43B659A32668DCB7EC828133 /* CalendarRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC4A5ABB5370DAB04CE155C /* CalendarRepository.swift */; };
+		4539C4C8659BB22955189E46 /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA08D1F60B3CEB13822A9D5A /* Log.swift */; };
 		464FD3B191FAC8FAC3522BC4 /* WeatherRepositoryProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41458029A80C668ECB9530DB /* WeatherRepositoryProtocol.swift */; };
 		48C59D51B1F44BC4ADE87B00 /* CalendarEventEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDD8B074B43888EB4F02527 /* CalendarEventEntity.swift */; };
 		4EAEED4CB5B937CBF56E3A2F /* AppCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06877330EDC1B4419ACE1A1C /* AppCoordinator.swift */; };
@@ -39,11 +41,14 @@
 		9CA2C731694E39904E13ED98 /* WeatherRemoteDataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CC54DC98E06CFC47D083D83 /* WeatherRemoteDataSource.swift */; };
 		A11E2476A2CB3A7F3785D080 /* UserEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65ABABC001336ED021F3BB0E /* UserEntity.swift */; };
 		A37687971E03060E956EEDC9 /* FetchWeatherUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6575F160A894D71A6D18F832 /* FetchWeatherUseCase.swift */; };
+		A7D02057492880A8FD6CDA35 /* UpdateClothingUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44191F1702E18A519FF83693 /* UpdateClothingUseCase.swift */; };
 		AEACA767B71B711D16AD5539 /* AnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0043A574DDCC8FAFA961001 /* AnalysisView.swift */; };
 		B108E2C714D610A7C4A7C915 /* HomeViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDE1D11B6343DA4D264FA18B /* HomeViewModel.swift */; };
 		B22CA19B51CF628B35B65B83 /* AddClothingUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F7BF414B95E971F557C38EC /* AddClothingUseCase.swift */; };
 		B6CFDAFC580AAA3B6CC1FB42 /* CalendarViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDA585409509F13F0DF6376D /* CalendarViewModel.swift */; };
+		BBCA295AC803402DC0701B9E /* LocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B06C1A409676577A712B353 /* LocationService.swift */; };
 		BF9A72F8B4769C52EB245F96 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7217F08943ADBF01501059BF /* HomeView.swift */; };
+		C0BE8EC2DBE1DD89CBD968A9 /* DeleteClothingUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 465277C663F842621D96835B /* DeleteClothingUseCase.swift */; };
 		C31C4E0CE7FE9248A52C06E5 /* AppDependencyContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C9015565C1E44CD33C008DE /* AppDependencyContainer.swift */; };
 		D380D97338A7D7B75C0785BE /* CalendarRepositoryProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CA07714A56117F316D523DC /* CalendarRepositoryProtocol.swift */; };
 		D716E70A9623CAA79DDD5A9C /* CalendarLocalDataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 851C87FB2BE3D4688B91B255 /* CalendarLocalDataSource.swift */; };
@@ -91,6 +96,8 @@
 		35F583A6CDD819FE12FF350A /* ClosetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClosetView.swift; sourceTree = "<group>"; };
 		3D94780A67705123597E42EA /* ClosetRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClosetRepository.swift; sourceTree = "<group>"; };
 		41458029A80C668ECB9530DB /* WeatherRepositoryProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherRepositoryProtocol.swift; sourceTree = "<group>"; };
+		44191F1702E18A519FF83693 /* UpdateClothingUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateClothingUseCase.swift; sourceTree = "<group>"; };
+		465277C663F842621D96835B /* DeleteClothingUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeleteClothingUseCase.swift; sourceTree = "<group>"; };
 		4799C2C31F4F07B914CEF518 /* UserRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserRepository.swift; sourceTree = "<group>"; };
 		4C7654EBB2F9D315ACF63199 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		4F7BF414B95E971F557C38EC /* AddClothingUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddClothingUseCase.swift; sourceTree = "<group>"; };
@@ -107,10 +114,12 @@
 		74A948C707703AF6FEDBAC58 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		763C0857A483AF2405DE1A60 /* CheckUmbrellaUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckUmbrellaUseCase.swift; sourceTree = "<group>"; };
 		7AAF6C936A903899A46B5236 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		7B06C1A409676577A712B353 /* LocationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationService.swift; sourceTree = "<group>"; };
 		851C87FB2BE3D4688B91B255 /* CalendarLocalDataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarLocalDataSource.swift; sourceTree = "<group>"; };
 		8BDD8B074B43888EB4F02527 /* CalendarEventEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarEventEntity.swift; sourceTree = "<group>"; };
 		8CA07714A56117F316D523DC /* CalendarRepositoryProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarRepositoryProtocol.swift; sourceTree = "<group>"; };
 		A6104553E6F862AD086EFBD2 /* AnalysisViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisViewModel.swift; sourceTree = "<group>"; };
+		AA833C87B4CE1A74A0D241CA /* ImageStorageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageStorageService.swift; sourceTree = "<group>"; };
 		ADCA623BE9E9D7D335B07A87 /* GetClothingListUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GetClothingListUseCase.swift; sourceTree = "<group>"; };
 		B0043A574DDCC8FAFA961001 /* AnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisView.swift; sourceTree = "<group>"; };
 		B44A9D5F1F534B5D78B2F51B /* WeatherEndpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherEndpoint.swift; sourceTree = "<group>"; };
@@ -127,6 +136,7 @@
 		E13FA4C2BCD572B5F2CB6ED6 /* GetCalendarEventsUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GetCalendarEventsUseCase.swift; sourceTree = "<group>"; };
 		EA047260F7FC9E63C6ECD963 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		EDA585409509F13F0DF6376D /* CalendarViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarViewModel.swift; sourceTree = "<group>"; };
+		FA08D1F60B3CEB13822A9D5A /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
 		FAC4A5ABB5370DAB04CE155C /* CalendarRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarRepository.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -268,8 +278,10 @@
 		3B8A44776777E775CBD7A656 /* Infrastructure */ = {
 			isa = PBXGroup;
 			children = (
+				48424C3E4F13A11050AC1848 /* Location */,
 				DF169F64F009FA3596FD5FEB /* Network */,
 				097ACF8E89D7CF1D8A1E2130 /* Persistence */,
+				D6E3D0F4449791E50E48E8BC /* Storage */,
 			);
 			path = Infrastructure;
 			sourceTree = "<group>";
@@ -303,6 +315,7 @@
 			children = (
 				4C7654EBB2F9D315ACF63199 /* Info.plist */,
 				19B93275B98F43DA9A22F2A3 /* App */,
+				70EDD498ECC758E1E2D54D06 /* Common */,
 				E7D6B3EA91A63521B13EC9AC /* Data */,
 				B5BA7ADA2D7488997631645E /* Domain */,
 				3B8A44776777E775CBD7A656 /* Infrastructure */,
@@ -310,6 +323,14 @@
 				35A7075C37B10C9715F8B082 /* Resources */,
 			);
 			path = Weather_closet;
+			sourceTree = "<group>";
+		};
+		48424C3E4F13A11050AC1848 /* Location */ = {
+			isa = PBXGroup;
+			children = (
+				7B06C1A409676577A712B353 /* LocationService.swift */,
+			);
+			path = Location;
 			sourceTree = "<group>";
 		};
 		4B0FFF64FC7653B94E4668F5 /* Endpoints */ = {
@@ -369,6 +390,14 @@
 				8BDD8B074B43888EB4F02527 /* CalendarEventEntity.swift */,
 			);
 			path = Calendar;
+			sourceTree = "<group>";
+		};
+		70EDD498ECC758E1E2D54D06 /* Common */ = {
+			isa = PBXGroup;
+			children = (
+				FA08D1F60B3CEB13822A9D5A /* Log.swift */,
+			);
+			path = Common;
 			sourceTree = "<group>";
 		};
 		7613B50069CC1C61AD987CDA /* Repositories */ = {
@@ -532,11 +561,21 @@
 			path = ViewModels;
 			sourceTree = "<group>";
 		};
+		D6E3D0F4449791E50E48E8BC /* Storage */ = {
+			isa = PBXGroup;
+			children = (
+				AA833C87B4CE1A74A0D241CA /* ImageStorageService.swift */,
+			);
+			path = Storage;
+			sourceTree = "<group>";
+		};
 		D991CB0A2097C5FC92228DA6 /* Closet */ = {
 			isa = PBXGroup;
 			children = (
 				4F7BF414B95E971F557C38EC /* AddClothingUseCase.swift */,
+				465277C663F842621D96835B /* DeleteClothingUseCase.swift */,
 				ADCA623BE9E9D7D335B07A87 /* GetClothingListUseCase.swift */,
+				44191F1702E18A519FF83693 /* UpdateClothingUseCase.swift */,
 			);
 			path = Closet;
 			sourceTree = "<group>";
@@ -712,18 +751,23 @@
 				1E5D54BEA069F4AEA6E293E7 /* ClosetViewModel.swift in Sources */,
 				6BFEAF6EF1C43B9E282F044D /* ClothingEntity.swift in Sources */,
 				90CB9B326717C9DF2AF7A8BB /* ClothingModel.swift in Sources */,
+				C0BE8EC2DBE1DD89CBD968A9 /* DeleteClothingUseCase.swift in Sources */,
 				A37687971E03060E956EEDC9 /* FetchWeatherUseCase.swift in Sources */,
 				93DD40A67864CCBDBEB78EC1 /* GetAnalysisUseCase.swift in Sources */,
 				54CA8F0B6C548BC9598DEB84 /* GetCalendarEventsUseCase.swift in Sources */,
 				151DE1246303D3E9B22ADC51 /* GetClothingListUseCase.swift in Sources */,
 				BF9A72F8B4769C52EB245F96 /* HomeView.swift in Sources */,
 				B108E2C714D610A7C4A7C915 /* HomeViewModel.swift in Sources */,
+				04E520964387BEC0783CD2D8 /* ImageStorageService.swift in Sources */,
+				BBCA295AC803402DC0701B9E /* LocationService.swift in Sources */,
+				4539C4C8659BB22955189E46 /* Log.swift in Sources */,
 				84AA8A892A5B53CF9247BCEA /* MainTabView.swift in Sources */,
 				DB9EDBBE4E904B35AFB617F6 /* OutfitEntity.swift in Sources */,
 				E2251E266B22F59D70000D66 /* PersistenceStack.swift in Sources */,
 				F182B4ECBBD0878C3424E31B /* ProfileView.swift in Sources */,
 				18A840EBDA7F01676B072CA0 /* ProfileViewModel.swift in Sources */,
 				ED0004DAEC0F0666CEE8B31B /* RecordOutfitUseCase.swift in Sources */,
+				A7D02057492880A8FD6CDA35 /* UpdateClothingUseCase.swift in Sources */,
 				A11E2476A2CB3A7F3785D080 /* UserEntity.swift in Sources */,
 				6A55CB0C163DC3F00989EDDC /* UserLocalDataSource.swift in Sources */,
 				59BDA9C9AE3938BEBCB27EDF /* UserModel.swift in Sources */,
@@ -803,6 +847,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -975,6 +1020,7 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
