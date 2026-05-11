@@ -7,9 +7,14 @@ final class ClothingModel {
     var name: String
     var brand: String
     var categoryRaw: String
+    var subCategoryRaw: String = ""
     var materialRaw: String
     var color: String
     var sizeLabel: String
+    var sizeShoulder: Double?
+    var sizeChest: Double?
+    var sizeSleeve: Double?
+    var sizeLength: Double?
     var ratingValue: Int
     var review: String
     var wearCount: Int
@@ -27,9 +32,14 @@ final class ClothingModel {
         self.name = entity.name
         self.brand = entity.brand
         self.categoryRaw = entity.category.rawValue
+        self.subCategoryRaw = entity.subCategory
         self.materialRaw = entity.material.rawValue
         self.color = entity.color
         self.sizeLabel = entity.size.label
+        self.sizeShoulder = entity.size.shoulder
+        self.sizeChest = entity.size.chest
+        self.sizeSleeve = entity.size.sleeve
+        self.sizeLength = entity.size.length
         self.ratingValue = entity.rating
         self.review = entity.review
         self.wearCount = entity.wearCount
@@ -45,9 +55,14 @@ final class ClothingModel {
         name = entity.name
         brand = entity.brand
         categoryRaw = entity.category.rawValue
+        subCategoryRaw = entity.subCategory
         materialRaw = entity.material.rawValue
         color = entity.color
         sizeLabel = entity.size.label
+        sizeShoulder = entity.size.shoulder
+        sizeChest = entity.size.chest
+        sizeSleeve = entity.size.sleeve
+        sizeLength = entity.size.length
         ratingValue = entity.rating
         review = entity.review
         wearCount = entity.wearCount
@@ -65,9 +80,10 @@ final class ClothingModel {
             name: name,
             brand: brand,
             category: ClothingCategory(rawValue: categoryRaw) ?? .etc,
+            subCategory: subCategoryRaw,
             material: ClothingMaterial(rawValue: materialRaw) ?? .etc,
             color: color,
-            size: ClothingSize(label: sizeLabel),
+            size: ClothingSize(label: sizeLabel, shoulder: sizeShoulder, chest: sizeChest, sleeve: sizeSleeve, length: sizeLength),
             alterationHistory: alterations.map { $0.toEntity() },
             rating: ratingValue,
             review: review,
