@@ -1117,13 +1117,16 @@ struct BgRemovePreviewSheet: View {
     let removedBg: UIImage?
     let isLoading: Bool
     let error: String?
+    let existingColor: String?
     let onAccept: (UIImage, String?) -> Void
     let onCancel: () -> Void
 
     @State private var selectedBg: PhotoBgOption = .transparent
     @State private var colorSuggestions: [ColorSuggestion] = []
     @State private var selectedSuggestion: String?
+    @State private var paletteColor: String?
     @State private var showNewColorPicker = false
+    @State private var showColorPalette = false
 
     @State private var showingColorPicker = false
     @State private var cpSampleNormalized: CGPoint?
@@ -1168,7 +1171,7 @@ struct BgRemovePreviewSheet: View {
                     } else {
                         headerBar
                         imageArea
-                        if !isLoading && !colorSuggestions.isEmpty { colorSuggestionRow }
+                        if !isLoading { colorSuggestionRow }
                         if !isLoading && removedBg != nil { bgColorPicker }
                         if !isLoading { actionButtons }
                     }
@@ -1190,6 +1193,7 @@ struct BgRemovePreviewSheet: View {
         }
         .task(id: isLoading) {
             guard !isLoading, let bg = removedBg else { return }
+            paletteColor = existingColor?.isEmpty == false ? existingColor : nil
             colorSuggestions = await ColorDetectionService.shared.detectColors(from: bg)
             selectedSuggestion = colorSuggestions.first?.name
         }
@@ -1255,27 +1259,30 @@ struct BgRemovePreviewSheet: View {
     }
 
     private var colorSuggestionRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let isCustomPicked = cpCroppedPreview != nil
+            && selectedSuggestion != nil
+            && !colorSuggestions.contains(where: { $0.name == selectedSuggestion })
+        let isPaletteSelected = !isCustomPicked
+            && selectedSuggestion != nil
+            && selectedSuggestion == paletteColor
+            && !colorSuggestions.contains(where: { $0.name == selectedSuggestion })
+        let paletteDisplayName = paletteColor
+
+        return VStack(alignment: .leading, spacing: 6) {
             Text("옷 색상")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 25)
+                .padding(.horizontal, 16)
 
-            HStack(spacing: 14) {
-                // 새로 등록 버튼
-                let isCustomPicked = cpCroppedPreview != nil
-                    && selectedSuggestion != nil
-                    && !colorSuggestions.contains(where: { $0.name == selectedSuggestion })
-                Button {
-                    showingColorPicker = true
-                } label: {
+            HStack(spacing: 0) {
+                // MARK: 새로 등록
+                Button { showingColorPicker = true } label: {
                     VStack(spacing: 4) {
                         ZStack {
                             if isCustomPicked, let preview = cpCroppedPreview {
                                 Image(uiImage: preview)
                                     .resizable()
                                     .scaledToFill()
-                                    .frame(width: 32, height: 32)
                                     .clipShape(Circle())
                             } else {
                                 Circle()
@@ -1285,85 +1292,143 @@ struct BgRemovePreviewSheet: View {
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(Color.accentColor)
                             }
-                            Circle()
-                                .strokeBorder(
-                                    isCustomPicked ? Color.accentColor : Color.clear,
-                                    lineWidth: isCustomPicked ? 2.5 : 0
-                                )
+                            if isCustomPicked {
+                                Circle().strokeBorder(Color.accentColor, lineWidth: 2.5)
+                            }
                         }
                         .frame(width: 32, height: 32)
                         Text(isCustomPicked ? (selectedSuggestion ?? "새로 등록") : "새로 등록")
                             .font(.system(size: 10))
                             .foregroundStyle(isCustomPicked ? Color(.label) : Color.accentColor)
-                        Text(" ")
-                            .font(.system(size: 9))
+                            .lineLimit(1)
+                        Text(" ").font(.system(size: 9))
                     }
                 }
                 .buttonStyle(.plain)
+                .frame(width: 76)
 
-                ForEach(colorSuggestions, id: \.name) { suggestion in
-                    Button {
-                        selectedSuggestion = suggestion.name
-                    } label: {
-                        VStack(spacing: 4) {
-                            ZStack {
-                                if let item = clothingColors.first(where: { $0.name == suggestion.name }) {
-                                    Circle().fill(item.color)
-                                }
-                                Circle()
-                                    .strokeBorder(
-                                        selectedSuggestion == suggestion.name
-                                            ? Color.accentColor : Color(.separator),
-                                        lineWidth: selectedSuggestion == suggestion.name ? 2.5 : 0.5
-                                    )
+                Divider().frame(height: 48)
+
+                // MARK: 불러오기
+                Button { showColorPalette = true } label: {
+                    VStack(spacing: 4) {
+                        ZStack {
+                            let allColors = clothingColors + CustomColorStore.loadEntries().map {
+                                ClothingColor(name: $0.name, color: .secondary, isCustom: true, imagePath: $0.imagePath)
                             }
-                            .frame(width: 32, height: 32)
+                            if let name = paletteDisplayName,
+                               let item = allColors.first(where: { $0.name == name }) {
+                                ColorCircle(item: item, size: 32, isSelected: isPaletteSelected)
+                            } else {
+                                Circle()
+                                    .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [4]))
+                                    .foregroundStyle(Color.accentColor)
+                                Image(systemName: "square.grid.2x2")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+                        .frame(width: 32, height: 32)
+                        Text(paletteDisplayName ?? "불러오기")
+                            .font(.system(size: 10))
+                            .foregroundStyle(paletteDisplayName != nil ? Color(.label) : Color.accentColor)
+                            .lineLimit(1)
+                        Text(" ").font(.system(size: 9))
+                    }
+                }
+                .buttonStyle(.plain)
+                .frame(width: 76)
 
-                            Text(suggestion.name)
-                                .font(.system(size: 10))
-                                .foregroundStyle(Color(.label))
+                Divider().frame(height: 48)
 
-                            Text("\(Int(suggestion.percentage * 100))%")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.secondary)
+                // MARK: 추천
+                HStack(spacing: 10) {
+                    if colorSuggestions.isEmpty {
+                        Text("분석 중...")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color(.tertiaryLabel))
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        ForEach(colorSuggestions.prefix(3), id: \.name) { suggestion in
+                            Button { selectedSuggestion = suggestion.name } label: {
+                                VStack(spacing: 4) {
+                                    ZStack {
+                                        if let item = clothingColors.first(where: { $0.name == suggestion.name }) {
+                                            Circle().fill(item.color)
+                                        }
+                                        Circle()
+                                            .strokeBorder(
+                                                selectedSuggestion == suggestion.name ? Color.accentColor : Color(.separator),
+                                                lineWidth: selectedSuggestion == suggestion.name ? 2.5 : 0.5
+                                            )
+                                    }
+                                    .frame(width: 32, height: 32)
+                                    Text(suggestion.name)
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Color(.label))
+                                        .lineLimit(1)
+                                    Text("\(Int(suggestion.percentage * 100))%")
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .buttonStyle(.plain)
                 }
-                Spacer()
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
             }
-            .padding(.horizontal, 25)
+            .padding(.horizontal, 16)
         }
-        .frame(height: 72)
+        .frame(height: 80)
+        .sheet(isPresented: $showColorPalette) {
+            ColorPaletteSheet(selectedColor: Binding(
+                get: { paletteColor ?? "" },
+                set: { paletteColor = $0.isEmpty ? nil : $0 }
+            )) { name in
+                cpCroppedPreview = nil
+                paletteColor = name
+                selectedSuggestion = name
+            }
+        }
     }
 
     private var bgColorPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(PhotoBgOption.allCases) { option in
-                    Button {
-                        selectedBg = option
-                    } label: {
-                        ZStack {
-                            if let color = option.swiftUIColor {
-                                Circle().fill(color)
-                            } else {
-                                CheckeredBackground().clipShape(Circle())
+        VStack(alignment: .leading, spacing: 6) {
+            Text("배경 색상")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(PhotoBgOption.allCases) { option in
+                        Button {
+                            selectedBg = option
+                        } label: {
+                            ZStack {
+                                if let color = option.swiftUIColor {
+                                    Circle().fill(color)
+                                } else {
+                                    CheckeredBackground().clipShape(Circle())
+                                }
+                                Circle()
+                                    .strokeBorder(
+                                        selectedBg == option ? Color.accentColor : Color(.separator),
+                                        lineWidth: selectedBg == option ? 2.5 : 0.5
+                                    )
                             }
-                            Circle()
-                                .strokeBorder(
-                                    selectedBg == option ? Color.accentColor : Color(.separator),
-                                    lineWidth: selectedBg == option ? 2.5 : 0.5
-                                )
+                            .frame(width: 30, height: 30)
                         }
-                        .frame(width: 30, height: 30)
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 16)
             }
-            .padding(.horizontal, 25)
         }
-        .frame(height: 50)
+        .frame(height: 62)
+        .padding(.bottom, 6)
     }
 
     private var actionButtons: some View {
@@ -1809,7 +1874,8 @@ struct AddClothingView: View {
                             original: current,
                             removedBg: removedBgImage,
                             isLoading: isRemovingBg,
-                            error: bgRemoveError
+                            error: bgRemoveError,
+                            existingColor: color.isEmpty ? nil : color
                         ) { finalImage, detectedColor in
                             selectedImages.append(finalImage)
                             if let c = detectedColor { color = c }
@@ -1897,6 +1963,7 @@ struct AddClothingView: View {
                             .overlay(alignment: .topTrailing) {
                                 Button {
                                     selectedImages.remove(at: idx)
+                                    if selectedImages.isEmpty { color = "" }
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .symbolRenderingMode(.palette)
@@ -2128,7 +2195,8 @@ struct EditClothingView: View {
                             original: current,
                             removedBg: removedBgImage,
                             isLoading: isRemovingBg,
-                            error: bgRemoveError
+                            error: bgRemoveError,
+                            existingColor: color.isEmpty ? nil : color
                         ) { finalImage, detectedColor in
                             selectedImages.append(finalImage)
                             if let c = detectedColor { color = c }
@@ -2214,6 +2282,7 @@ struct EditClothingView: View {
                             .overlay(alignment: .topTrailing) {
                                 Button {
                                     selectedImages.remove(at: idx)
+                                    if selectedImages.isEmpty { color = "" }
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .symbolRenderingMode(.palette)
