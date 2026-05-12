@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		04E520964387BEC0783CD2D8 /* ImageStorageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA833C87B4CE1A74A0D241CA /* ImageStorageService.swift */; };
+		0D5ECEB2727822F7A572E3B3 /* RemoveBgService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B96B436E3F03A7B9D52384 /* RemoveBgService.swift */; };
 		0EA90766C985AE5F6052507C /* WeatherResponseDTO.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0816CA3BED33F7BC042F3B /* WeatherResponseDTO.swift */; };
 		151DE1246303D3E9B22ADC51 /* GetClothingListUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADCA623BE9E9D7D335B07A87 /* GetClothingListUseCase.swift */; };
 		179CBECDF490CCB7BA7BAC0A /* CheckUmbrellaUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763C0857A483AF2405DE1A60 /* CheckUmbrellaUseCase.swift */; };
@@ -18,6 +19,7 @@
 		29658659EC896E444A7EB926 /* CalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D98DE5F0E33D9CD3B0DF31D0 /* CalendarView.swift */; };
 		2A0328C3F17E76CE2EBC1BE7 /* ClosetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35F583A6CDD819FE12FF350A /* ClosetView.swift */; };
 		35477573511270C3B75D8C30 /* ClosetRepositoryProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC33F62103C2078601C1F6EC /* ClosetRepositoryProtocol.swift */; };
+		3831A6421A071AFDCBA61DB9 /* ColorDetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3664E30DCF97CDE96837FDD9 /* ColorDetectionService.swift */; };
 		3C26994F0F8F30ED5C8E2E77 /* CalendarEventModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C29E038B3C8918368D77E6C9 /* CalendarEventModel.swift */; };
 		3C380256BB5EB95F7AB4CC95 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7AAF6C936A903899A46B5236 /* Assets.xcassets */; };
 		3ED3639FAC836C8DA5AAA327 /* ClosetLocalDataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB01A0A15E9C5B9B4BA2BBE2 /* ClosetLocalDataSource.swift */; };
@@ -94,6 +96,7 @@
 		34105142B99F16A45D744329 /* Weather_closet.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Weather_closet.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		343018818F74BE04748A6407 /* ClosetViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClosetViewModel.swift; sourceTree = "<group>"; };
 		35F583A6CDD819FE12FF350A /* ClosetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClosetView.swift; sourceTree = "<group>"; };
+		3664E30DCF97CDE96837FDD9 /* ColorDetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorDetectionService.swift; sourceTree = "<group>"; };
 		3D94780A67705123597E42EA /* ClosetRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClosetRepository.swift; sourceTree = "<group>"; };
 		41458029A80C668ECB9530DB /* WeatherRepositoryProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherRepositoryProtocol.swift; sourceTree = "<group>"; };
 		44191F1702E18A519FF83693 /* UpdateClothingUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateClothingUseCase.swift; sourceTree = "<group>"; };
@@ -108,6 +111,7 @@
 		62A02CC5F3C3C090CBD00496 /* OutfitEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutfitEntity.swift; sourceTree = "<group>"; };
 		6575F160A894D71A6D18F832 /* FetchWeatherUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FetchWeatherUseCase.swift; sourceTree = "<group>"; };
 		65ABABC001336ED021F3BB0E /* UserEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserEntity.swift; sourceTree = "<group>"; };
+		67B96B436E3F03A7B9D52384 /* RemoveBgService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoveBgService.swift; sourceTree = "<group>"; };
 		6A45369FA2A25E23608706EC /* UserLocalDataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserLocalDataSource.swift; sourceTree = "<group>"; };
 		6EE38A75FA874BC31EEDA2F6 /* RecordOutfitUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordOutfitUseCase.swift; sourceTree = "<group>"; };
 		7217F08943ADBF01501059BF /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
@@ -564,6 +568,7 @@
 		D6E3D0F4449791E50E48E8BC /* Storage */ = {
 			isa = PBXGroup;
 			children = (
+				3664E30DCF97CDE96837FDD9 /* ColorDetectionService.swift */,
 				AA833C87B4CE1A74A0D241CA /* ImageStorageService.swift */,
 			);
 			path = Storage;
@@ -584,6 +589,7 @@
 			isa = PBXGroup;
 			children = (
 				198C74717E5CCF91EF13F774 /* APIClient.swift */,
+				67B96B436E3F03A7B9D52384 /* RemoveBgService.swift */,
 				4B0FFF64FC7653B94E4668F5 /* Endpoints */,
 			);
 			path = Network;
@@ -751,6 +757,7 @@
 				1E5D54BEA069F4AEA6E293E7 /* ClosetViewModel.swift in Sources */,
 				6BFEAF6EF1C43B9E282F044D /* ClothingEntity.swift in Sources */,
 				90CB9B326717C9DF2AF7A8BB /* ClothingModel.swift in Sources */,
+				3831A6421A071AFDCBA61DB9 /* ColorDetectionService.swift in Sources */,
 				C0BE8EC2DBE1DD89CBD968A9 /* DeleteClothingUseCase.swift in Sources */,
 				A37687971E03060E956EEDC9 /* FetchWeatherUseCase.swift in Sources */,
 				93DD40A67864CCBDBEB78EC1 /* GetAnalysisUseCase.swift in Sources */,
@@ -767,6 +774,7 @@
 				F182B4ECBBD0878C3424E31B /* ProfileView.swift in Sources */,
 				18A840EBDA7F01676B072CA0 /* ProfileViewModel.swift in Sources */,
 				ED0004DAEC0F0666CEE8B31B /* RecordOutfitUseCase.swift in Sources */,
+				0D5ECEB2727822F7A572E3B3 /* RemoveBgService.swift in Sources */,
 				A7D02057492880A8FD6CDA35 /* UpdateClothingUseCase.swift in Sources */,
 				A11E2476A2CB3A7F3785D080 /* UserEntity.swift in Sources */,
 				6A55CB0C163DC3F00989EDDC /* UserLocalDataSource.swift in Sources */,
@@ -842,6 +850,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = U4STX4QR4M;
 				ENABLE_PREVIEWS = YES;
@@ -869,6 +878,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_COMPILATION_MODE = incremental;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
 			};
@@ -1015,6 +1025,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = U4STX4QR4M;
 				ENABLE_NS_ASSERTIONS = NO;

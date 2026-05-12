@@ -13,6 +13,11 @@ settings:
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: U4STX4QR4M
     ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+    SWIFT_COMPILATION_MODE: wholemodule
+  configs:
+    Debug:
+      SWIFT_COMPILATION_MODE: incremental
 
 packages:
   LookinServer:
@@ -54,6 +59,7 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         NSLocationWhenInUseUsageDescription: "날씨 정보를 위해 현재 위치가 필요합니다."
+        NSCameraUsageDescription: "옷 사진 촬영을 위해 카메라 접근이 필요합니다."
         UILaunchScreen:
           UIColorName: AccentColor
 

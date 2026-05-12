@@ -25,8 +25,6 @@ enum ClothingCategory: String, CaseIterable {
     case outer = "아우터"
     case top = "상의"
     case bottom = "하의"
-    case shirt = "셔츠"
-    case jeans = "청바지"
     case dress = "원피스/드레스"
     case shoes = "신발"
     case accessory = "악세사리"
@@ -54,8 +52,6 @@ enum ClothingCategory: String, CaseIterable {
                 "데님 팬츠", "트레이닝/조거 팬츠", "코튼 팬츠", "슈트 팬츠/슬랙스",
                 "숏 팬츠", "레깅스", "점프 슈트/오버올", "기타 하의"
             ]
-        case .shirt:     return ["캐주얼 셔츠", "드레스 셔츠", "옥스퍼드", "플란넬", "기타"]
-        case .jeans:     return ["스트레이트", "슬림", "와이드", "스키니", "기타"]
         case .dress:     return ["미니", "미디", "맥시", "기타"]
         case .shoes:     return ["스니커즈", "로퍼", "부츠", "샌들", "슬리퍼", "구두", "기타"]
         case .accessory: return ["목걸이", "귀걸이", "반지", "팔찌", "벨트", "선글라스", "시계", "기타"]
