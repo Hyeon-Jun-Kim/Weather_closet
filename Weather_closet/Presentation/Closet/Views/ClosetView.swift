@@ -621,14 +621,29 @@ struct ColorPaletteSheet: View {
     let onSelect: (String) -> Void
 
     @State private var customColorEntries: [(name: String, imagePath: String?)] = CustomColorStore.loadEntries()
+    @State private var searchText = ""
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 16), count: 5)
+
+    private var filteredClothingColors: [ClothingColor] {
+        guard !searchText.isEmpty else { return clothingColors }
+        return clothingColors.filter { $0.name.localizedStandardContains(searchText) }
+    }
+
+    private var filteredCustomEntries: [(name: String, imagePath: String?)] {
+        guard !searchText.isEmpty else { return customColorEntries }
+        return customColorEntries.filter { $0.name.localizedStandardContains(searchText) }
+    }
+
+    private var hasNoResults: Bool {
+        filteredClothingColors.isEmpty && filteredCustomEntries.isEmpty
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 24) {
-                    ForEach(clothingColors) { item in
+                    ForEach(filteredClothingColors) { item in
                         Button {
                             selectedColor = item.name
                             onSelect(item.name)
@@ -639,20 +654,25 @@ struct ColorPaletteSheet: View {
                                 Text(item.name)
                                     .font(.caption)
                                     .foregroundStyle(.primary)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, minHeight: 16, alignment: .top)
                             }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         }
                         .buttonStyle(.plain)
                     }
                 }
                 .padding()
 
-                if !customColorEntries.isEmpty {
+                if !filteredCustomEntries.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("나만의 색상")
                             .font(.headline)
                             .padding(.horizontal)
                         LazyVGrid(columns: columns, spacing: 24) {
-                            ForEach(customColorEntries, id: \.name) { entry in
+                            ForEach(filteredCustomEntries, id: \.name) { entry in
                                 let item = ClothingColor(name: entry.name, color: .secondary, isCustom: true, imagePath: entry.imagePath)
                                 Button {
                                     selectedColor = entry.name
@@ -664,7 +684,12 @@ struct ColorPaletteSheet: View {
                                         Text(entry.name)
                                             .font(.caption)
                                             .foregroundStyle(.primary)
+                                            .multilineTextAlignment(.center)
+                                            .lineLimit(2)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .frame(maxWidth: .infinity, minHeight: 16, alignment: .top)
                                     }
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                                 }
                                 .buttonStyle(.plain)
                                 .contextMenu {
@@ -681,7 +706,15 @@ struct ColorPaletteSheet: View {
                         .padding(.bottom)
                     }
                 }
+
+                if hasNoResults {
+                    Text("'\(searchText)'에 해당하는 색상이 없습니다")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 40)
+                }
             }
+            .searchable(text: $searchText, prompt: "색상 검색")
             .navigationTitle("색상 선택")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
