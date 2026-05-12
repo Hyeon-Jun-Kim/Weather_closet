@@ -34,4 +34,12 @@ final class RecordOutfitUseCase {
         )
         try await repository.save(event)
     }
+
+    func update(_ event: CalendarEventEntity) async throws {
+        try await repository.update(event)
+    }
+
+    func delete(id: UUID) async throws {
+        try await repository.delete(id: id)
+    }
 }

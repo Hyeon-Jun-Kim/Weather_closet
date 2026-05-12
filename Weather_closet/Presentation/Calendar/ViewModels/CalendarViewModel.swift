@@ -59,6 +59,24 @@ final class CalendarViewModel: ObservableObject {
         }
     }
 
+    func deleteEvent(id: UUID) async {
+        do {
+            try await recordOutfitUseCase.delete(id: id)
+            await loadEvents(for: selectedDate)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func updateEvent(_ event: CalendarEventEntity) async {
+        do {
+            try await recordOutfitUseCase.update(event)
+            await loadEvents(for: selectedDate)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func recordSale(clothingName: String, price: Double, platform: String, note: String) async {
         do {
             let log = SaleLogEntity(clothingID: nil, clothingName: clothingName, price: price, platform: platform, note: note)
