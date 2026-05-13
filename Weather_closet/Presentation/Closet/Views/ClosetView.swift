@@ -1,52 +1,125 @@
 import SwiftUI
 import PhotosUI
 
+enum ClosetMainTab: Hashable, CaseIterable {
+    case closet, wishlist, outfit
+    var title: String {
+        switch self {
+        case .closet:   return "옷장"
+        case .wishlist: return "위시리스트"
+        case .outfit:   return "코디"
+        }
+    }
+}
+
 struct ClosetView: View {
     @EnvironmentObject var viewModel: ClosetViewModel
     @State private var showAddSheet = false
+    @State private var selectedTab: ClosetMainTab = .closet
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                CategoryFilterView(selectedCategory: $viewModel.selectedCategory)
-                    .onChange(of: viewModel.selectedCategory) { _, _ in
-                        viewModel.selectedSubCategory = nil
+            ZStack(alignment: .bottomTrailing) {
+                VStack(spacing: 0) {
+                    ClosetTabSelector(selectedTab: $selectedTab)
+
+                    TabView(selection: $selectedTab) {
+                        VStack(spacing: 0) { closetContent }
+                            .tag(ClosetMainTab.closet)
+
+                        ContentUnavailableView(
+                            "위시리스트",
+                            systemImage: "heart",
+                            description: Text("준비 중입니다.")
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .tag(ClosetMainTab.wishlist)
+
+                        ContentUnavailableView(
+                            "코디",
+                            systemImage: "person.crop.rectangle.stack",
+                            description: Text("준비 중입니다.")
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .tag(ClosetMainTab.outfit)
                     }
-
-                if !viewModel.availableSubCategories.isEmpty {
-                    SubCategoryFilterView(
-                        subCategories: viewModel.availableSubCategories,
-                        selectedSubCategory: $viewModel.selectedSubCategory
-                    )
+                    .tabViewStyle(.page(indexDisplayMode: .never))
                 }
 
-                if viewModel.isLoading {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if viewModel.filteredList.isEmpty {
-                    ContentUnavailableView(
-                        "옷이 없습니다",
-                        systemImage: "tshirt",
-                        description: Text("옷장에 옷을 추가해보세요.")
-                    )
-                } else {
-                    ClothingGridView(items: viewModel.filteredList)
-                        .environmentObject(viewModel)
-                }
-            }
-            .navigationTitle("옷장")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                if selectedTab == .closet {
                     Button { showAddSheet = true } label: {
                         Image(systemName: "plus")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Color(.systemGray).opacity(0.85), in: Circle())
                     }
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 20)
+                    .transition(.scale.combined(with: .opacity))
                 }
             }
+            .animation(.easeInOut(duration: 0.2), value: selectedTab)
+            .navigationBarTitleDisplayMode(.inline)
             .task { await viewModel.loadClothing() }
             .sheet(isPresented: $showAddSheet) {
                 AddClothingView()
                     .environmentObject(viewModel)
             }
         }
+    }
+
+    @ViewBuilder
+    private var closetContent: some View {
+        CategoryFilterView(selectedCategory: $viewModel.selectedCategory)
+            .onChange(of: viewModel.selectedCategory) { _, _ in
+                viewModel.selectedSubCategory = nil
+            }
+
+        if !viewModel.availableSubCategories.isEmpty {
+            SubCategoryFilterView(
+                subCategories: viewModel.availableSubCategories,
+                selectedSubCategory: $viewModel.selectedSubCategory
+            )
+        }
+
+        if viewModel.isLoading {
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if viewModel.filteredList.isEmpty {
+            ContentUnavailableView(
+                "옷이 없습니다",
+                systemImage: "tshirt",
+                description: Text("옷장에 옷을 추가해보세요.")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ClothingGridView(items: viewModel.filteredList)
+                .environmentObject(viewModel)
+        }
+    }
+}
+
+struct ClosetTabSelector: View {
+    @Binding var selectedTab: ClosetMainTab
+
+    var body: some View {
+        HStack(spacing: 28) {
+            ForEach(ClosetMainTab.allCases, id: \.title) { tab in
+                let isSelected = selectedTab == tab
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { selectedTab = tab }
+                } label: {
+                    Text(tab.title)
+                        .font(.system(size: isSelected ? 22 : 18, weight: isSelected ? .bold : .regular))
+                        .foregroundStyle(isSelected ? Color(.label) : Color(.label).opacity(0.3))
+                        .animation(.easeInOut(duration: 0.2), value: selectedTab)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
     }
 }
 
@@ -532,6 +605,7 @@ struct ColorPickerRow: View {
         }
         .onChange(of: selectedColor) { _, newValue in
             if searchText != newValue { searchText = newValue }
+            customColorEntries = CustomColorStore.loadEntries()
         }
         .sheet(isPresented: $showPalette) {
             ColorPaletteSheet(selectedColor: $selectedColor) { name in
@@ -539,7 +613,7 @@ struct ColorPickerRow: View {
             }
             .onDisappear { customColorEntries = CustomColorStore.loadEntries() }
         }
-        .navigationDestination(isPresented: $showImagePicker) {
+        .fullScreenCover(isPresented: $showImagePicker) {
             ImageColorPickerSheet(images: images) { name in
                 selectedColor = name
                 searchText = name
@@ -607,9 +681,11 @@ struct ColorCircle: View {
             }
         }
         .frame(width: size, height: size)
-        .onAppear {
+        .task(id: item.imagePath ?? "") {
             if let path = item.imagePath {
                 customImage = ImageStorageService.shared.load(path: path)
+            } else {
+                customImage = nil
             }
         }
     }
@@ -727,7 +803,12 @@ struct ColorPaletteSheet: View {
 }
 
 // UIKit 기반 gesture overlay — 핀치·2손가락 팬·1손가락 드래그 분리
-private final class _TouchView: UIView {}
+private final class _TouchView: UIView {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard bounds.contains(point) else { return nil }
+        return super.hitTest(point, with: event)
+    }
+}
 
 private struct ImageGestureOverlay: UIViewRepresentable {
     var onPinchDelta: (CGFloat) -> Void
@@ -810,6 +891,104 @@ private struct ImageGestureOverlay: UIViewRepresentable {
     }
 }
 
+// CropPassThroughView: UIKit 터치를 직접 받되, 핸들 근처는 nil 반환해 하위 SwiftUI 뷰로 통과
+private final class CropPassThroughView: UIView {
+    var handlePositions: [CGPoint] = []
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard bounds.contains(point) else { return nil }
+        for pos in handlePositions {
+            let dx = point.x - pos.x
+            let dy = point.y - pos.y
+            if dx*dx + dy*dy < 900 { return nil }  // 30pt radius: pass through to handle below
+        }
+        return self
+    }
+}
+
+// ZStack 맨 위에 배치해 다크 영역 포함 전체에서 pinch/pan을 받음
+private struct CropGestureView: UIViewRepresentable {
+    var onPinchDelta: (CGFloat) -> Void
+    var onPanDelta: (CGSize) -> Void
+    var onTwoFingerPanDelta: (CGSize) -> Void
+    var handlePositions: [CGPoint]
+
+    func makeUIView(context: Context) -> CropPassThroughView {
+        let v = CropPassThroughView()
+        v.backgroundColor = .clear
+        v.isMultipleTouchEnabled = true
+        let pinch = UIPinchGestureRecognizer(target: context.coordinator,
+                                             action: #selector(Coordinator.pinched(_:)))
+        pinch.delegate = context.coordinator
+        let pan = UIPanGestureRecognizer(target: context.coordinator,
+                                         action: #selector(Coordinator.panned(_:)))
+        pan.maximumNumberOfTouches = 1
+        pan.delegate = context.coordinator
+        let twoFingerPan = UIPanGestureRecognizer(target: context.coordinator,
+                                                  action: #selector(Coordinator.twoFingerPanned(_:)))
+        twoFingerPan.minimumNumberOfTouches = 2
+        twoFingerPan.maximumNumberOfTouches = 2
+        twoFingerPan.delegate = context.coordinator
+        v.addGestureRecognizer(pinch)
+        v.addGestureRecognizer(pan)
+        v.addGestureRecognizer(twoFingerPan)
+        return v
+    }
+
+    func updateUIView(_ uiView: CropPassThroughView, context: Context) {
+        uiView.handlePositions = handlePositions
+        context.coordinator.onPinchDelta = onPinchDelta
+        context.coordinator.onPanDelta = onPanDelta
+        context.coordinator.onTwoFingerPanDelta = onTwoFingerPanDelta
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPinchDelta: onPinchDelta, onPanDelta: onPanDelta, onTwoFingerPanDelta: onTwoFingerPanDelta)
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var onPinchDelta: (CGFloat) -> Void
+        var onPanDelta: (CGSize) -> Void
+        var onTwoFingerPanDelta: (CGSize) -> Void
+        private var lastScale: CGFloat = 1
+
+        init(onPinchDelta: @escaping (CGFloat) -> Void,
+             onPanDelta: @escaping (CGSize) -> Void,
+             onTwoFingerPanDelta: @escaping (CGSize) -> Void) {
+            self.onPinchDelta = onPinchDelta
+            self.onPanDelta = onPanDelta
+            self.onTwoFingerPanDelta = onTwoFingerPanDelta
+        }
+
+        @objc func pinched(_ r: UIPinchGestureRecognizer) {
+            switch r.state {
+            case .began:   lastScale = 1
+            case .changed:
+                let delta = r.scale / lastScale
+                lastScale = r.scale
+                onPinchDelta(delta)
+            default: break
+            }
+        }
+
+        @objc func panned(_ r: UIPanGestureRecognizer) {
+            guard r.state == .changed else { return }
+            let t = r.translation(in: r.view)
+            r.setTranslation(.zero, in: r.view)
+            onPanDelta(CGSize(width: t.x, height: t.y))
+        }
+
+        @objc func twoFingerPanned(_ r: UIPanGestureRecognizer) {
+            guard r.state == .changed else { return }
+            let t = r.translation(in: r.view)
+            r.setTranslation(.zero, in: r.view)
+            onTwoFingerPanDelta(CGSize(width: t.x, height: t.y))
+        }
+
+        func gestureRecognizer(_ g: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
+}
+
 struct ImageColorPickerSheet: View {
     let images: [UIImage]
     let onSelect: (String) -> Void
@@ -822,6 +1001,7 @@ struct ImageColorPickerSheet: View {
     @State private var scale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var showDuplicateAlert = false
+    @State private var keyboardHeight: CGFloat = 0
     @FocusState private var colorNameFocused: Bool
 
     private var hasPickedColor: Bool { pickedRGB != nil }
@@ -832,162 +1012,213 @@ struct ImageColorPickerSheet: View {
             || CustomColorStore.load().contains(name)
     }
 
+    private var cardBackground: Color {
+        Color(UIColor { trait in
+            trait.userInterfaceStyle == .dark
+                ? UIColor(white: 0.15, alpha: 1)
+                : .white
+        })
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack {
+            Color.black.opacity(0.7)
+                .ignoresSafeArea()
+                .onTapGesture { colorNameFocused = false; dismiss() }
 
-            // MARK: 이미지 영역
             GeometryReader { geo in
-                ZStack {
-                    Color(.secondarySystemBackground)
+                let w = max(0, geo.size.width - 40)
+                let effectiveKeyboard = max(0, keyboardHeight - geo.safeAreaInsets.bottom)
+                let baseH = w * 1.55
+                let cardH = keyboardHeight > 0
+                    ? min(baseH, geo.size.height - effectiveKeyboard - 16)
+                    : baseH
+                let cardY = keyboardHeight > 0
+                    ? (geo.size.height - effectiveKeyboard) / 2
+                    : geo.size.height / 2
 
-                    Image(uiImage: images[imageIndex])
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .scaleEffect(scale, anchor: .center)
-                        .offset(offset)
-
-                    if let loc = tapLocation, let (r, g, b) = pickedRGB {
-                        ZStack {
-                            Circle()
-                                .fill(Color(red: r, green: g, blue: b))
-                                .frame(width: 36, height: 36)
-                            Circle()
-                                .strokeBorder(.white, lineWidth: 2.5)
-                                .frame(width: 36, height: 36)
-                                .shadow(color: .black.opacity(0.3), radius: 3)
-                        }
-                        .position(loc)
-                        .allowsHitTesting(false)
-                    }
-
-                    ImageGestureOverlay(
-                        onPinchDelta: { delta in
-                            let newScale = max(1.0, min(5.0, scale * delta))
-                            scale = newScale
-                            if newScale <= 1.0 { offset = .zero }
-                        },
-                        onTwoFingerPan: { delta in
-                            let maxX = geo.size.width  * (scale - 1) / 2
-                            let maxY = geo.size.height * (scale - 1) / 2
-                            offset = CGSize(
-                                width:  max(-maxX, min(maxX,  offset.width  + delta.width)),
-                                height: max(-maxY, min(maxY, offset.height + delta.height))
-                            )
-                        },
-                        onSingleDrag: { loc in
-                            colorNameFocused = false
-                            tapLocation = loc
-                            sampleColor(at: loc, in: geo.size)
-                        }
-                    )
+                VStack(spacing: 0) {
+                    headerBar
+                    imagePickerArea
+                    Divider()
+                    controlsSection
                 }
-                .clipped()
+                .frame(width: w, height: cardH)
+                .background(cardBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 24))
+                .contentShape(RoundedRectangle(cornerRadius: 24))
+                .onTapGesture {}
+                .animation(.easeOut(duration: 0.25), value: keyboardHeight)
+                .position(x: geo.size.width / 2, y: cardY)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notif in
+            if let frame = notif.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                withAnimation(.easeOut(duration: 0.25)) { keyboardHeight = frame.height }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            withAnimation(.easeOut(duration: 0.25)) { keyboardHeight = 0 }
+        }
+        .alert("이미 등록된 색상명입니다", isPresented: $showDuplicateAlert) {
+            Button("불러오기") {
+                onSelect(editedColorName.trimmingCharacters(in: .whitespaces))
+                dismiss()
+            }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("등록되어있는 색상을 불러올까요?")
+        }
+    }
 
-            Divider()
-
-            // MARK: 색상 / 색상명 / 선택 영역
-            VStack(spacing: 14) {
-                if images.count > 1 {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(images.indices, id: \.self) { i in
-                                Image(uiImage: images[i])
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 52, height: 52)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .strokeBorder(
-                                                imageIndex == i ? Color.accentColor : Color.clear,
-                                                lineWidth: 2
-                                            )
-                                    )
-                                    .onTapGesture {
-                                        imageIndex = i
-                                        tapLocation = nil
-                                        pickedRGB = nil
-                                        editedColorName = ""
-                                        scale = 1.0
-                                        offset = .zero
-                                    }
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                    }
+    private var headerBar: some View {
+        ZStack {
+            Text("색상 추출")
+                .font(.system(size: 17, weight: .bold))
+            HStack {
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.primary)
                 }
+                .padding(.trailing, 20)
+            }
+        }
+        .frame(height: 52)
+    }
 
-                HStack(spacing: 12) {
-                    // 색상 미리보기
-                    if let (r, g, b) = pickedRGB {
+    private var imagePickerArea: some View {
+        GeometryReader { geo in
+            ZStack {
+                Color(.secondarySystemGroupedBackground)
+
+                Image(uiImage: images[imageIndex])
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .scaleEffect(scale, anchor: .center)
+                    .offset(offset)
+
+                if let loc = tapLocation, let (r, g, b) = pickedRGB {
+                    ZStack {
                         Circle()
                             .fill(Color(red: r, green: g, blue: b))
                             .frame(width: 36, height: 36)
-                            .overlay(Circle().strokeBorder(Color.secondary.opacity(0.3), lineWidth: 0.5))
-                    } else {
                         Circle()
-                            .fill(Color.secondary.opacity(0.12))
+                            .strokeBorder(.white, lineWidth: 2.5)
                             .frame(width: 36, height: 36)
-                            .overlay(
-                                Image(systemName: "eyedropper")
-                                    .font(.system(size: 15))
-                                    .foregroundStyle(.secondary)
-                            )
+                            .shadow(color: .black.opacity(0.3), radius: 3)
                     }
+                    .position(loc)
+                    .allowsHitTesting(false)
+                }
 
-                    // 색상명
-                    Group {
-                        if hasPickedColor {
-                            TextField("색상 이름 입력", text: $editedColorName)
-                                .focused($colorNameFocused)
-                        } else {
-                            Text("이미지를 탭하거나 드래그하세요")
+                ImageGestureOverlay(
+                    onPinchDelta: { delta in
+                        let newScale = max(1.0, min(5.0, scale * delta))
+                        scale = newScale
+                        if newScale <= 1.0 { offset = .zero }
+                    },
+                    onTwoFingerPan: { delta in
+                        let maxX = geo.size.width  * (scale - 1) / 2
+                        let maxY = geo.size.height * (scale - 1) / 2
+                        offset = CGSize(
+                            width:  max(-maxX, min(maxX,  offset.width  + delta.width)),
+                            height: max(-maxY, min(maxY, offset.height + delta.height))
+                        )
+                    },
+                    onSingleDrag: { loc in
+                        colorNameFocused = false
+                        tapLocation = loc
+                        sampleColor(at: loc, in: geo.size)
+                    }
+                )
+            }
+            .clipped()
+        }
+    }
+
+    private var controlsSection: some View {
+        VStack(spacing: 10) {
+            if images.count > 1 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(images.indices, id: \.self) { i in
+                            Image(uiImage: images[i])
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 44, height: 44)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .strokeBorder(
+                                            imageIndex == i ? Color.accentColor : Color.clear,
+                                            lineWidth: 2
+                                        )
+                                )
+                                .onTapGesture {
+                                    imageIndex = i
+                                    tapLocation = nil
+                                    pickedRGB = nil
+                                    editedColorName = ""
+                                    scale = 1.0
+                                    offset = .zero
+                                }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+
+            HStack(spacing: 12) {
+                if let (r, g, b) = pickedRGB {
+                    Circle()
+                        .fill(Color(red: r, green: g, blue: b))
+                        .frame(width: 36, height: 36)
+                        .overlay(Circle().strokeBorder(Color.secondary.opacity(0.3), lineWidth: 0.5))
+                } else {
+                    Circle()
+                        .fill(Color.secondary.opacity(0.12))
+                        .frame(width: 36, height: 36)
+                        .overlay(
+                            Image(systemName: "eyedropper")
+                                .font(.system(size: 15))
                                 .foregroundStyle(.secondary)
-                        }
-                    }
-                    .font(.subheadline)
+                        )
+                }
 
-                    Spacer()
-
-                    // 선택 버튼
-                    Button("선택") {
-                        let name = editedColorName.trimmingCharacters(in: .whitespaces)
-                        guard !name.isEmpty else { return }
-                        if isAlreadyRegistered {
-                            showDuplicateAlert = true
-                        } else {
-                            onSelect(name)
-                            dismiss()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!hasPickedColor || editedColorName.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .alert("이미 등록된 색상명입니다", isPresented: $showDuplicateAlert) {
-                        Button("불러오기") {
-                            onSelect(editedColorName.trimmingCharacters(in: .whitespaces))
-                            dismiss()
-                        }
-                        Button("취소", role: .cancel) {}
-                    } message: {
-                        Text("등록되어있는 색상을 불러올까요?")
+                Group {
+                    if hasPickedColor {
+                        TextField("색상 이름 입력", text: $editedColorName)
+                            .focused($colorNameFocused)
+                            .submitLabel(.done)
+                            .onSubmit { colorNameFocused = false }
+                    } else {
+                        Text("이미지를 탭하거나 드래그하세요")
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.horizontal, 16)
-            }
-            .padding(.vertical, 16)
-            .background(Color(.systemBackground))
-        }
-        .navigationTitle("색상 추출")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
+                .font(.subheadline)
+
                 Spacer()
-                Button("완료") { colorNameFocused = false }
+
+                Button("선택") {
+                    let name = editedColorName.trimmingCharacters(in: .whitespaces)
+                    guard !name.isEmpty else { return }
+                    if isAlreadyRegistered {
+                        showDuplicateAlert = true
+                    } else {
+                        onSelect(name)
+                        dismiss()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!hasPickedColor || editedColorName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+            .padding(.horizontal, 16)
         }
-        .onTapGesture { colorNameFocused = false }
+        .padding(.vertical, 14)
     }
 
     private func sampleColor(at point: CGPoint, in containerSize: CGSize) {
@@ -1080,7 +1311,7 @@ struct SizeMeasurementRow: View {
 
 // MARK: - BG Remove Preview
 
-private enum PhotoBgOption: CaseIterable, Identifiable {
+enum PhotoBgOption: CaseIterable, Identifiable {
     case transparent, white, lightGrey, grey, darkGrey, black, beige, skyBlue
 
     var id: Self { self }
@@ -1118,11 +1349,15 @@ struct BgRemovePreviewSheet: View {
     let isLoading: Bool
     let error: String?
     let existingColor: String?
-    let onAccept: (UIImage, String?) -> Void
+    var isEditMode: Bool = false
+    var existingBg: PhotoBgOption = .transparent
+    var cancelLabel: String = "다시 선택"
+    let onAccept: (UIImage, String?, PhotoBgOption) -> Void
     let onCancel: () -> Void
 
     @State private var selectedBg: PhotoBgOption = .transparent
     @State private var colorSuggestions: [ColorSuggestion] = []
+    @State private var colorAnalysisDone = false
     @State private var selectedSuggestion: String?
     @State private var paletteColor: String?
     @State private var showNewColorPicker = false
@@ -1137,6 +1372,20 @@ struct BgRemovePreviewSheet: View {
     @State private var cpOffset: CGSize = .zero
     @FocusState private var cpNameFocused: Bool
     @State private var keyboardHeight: CGFloat = 0
+
+    @State private var showCropView = false
+    @State private var croppedImage: UIImage? = nil
+    @State private var cropMinX: CGFloat = 0.05
+    @State private var cropMinY: CGFloat = 0.05
+    @State private var cropMaxX: CGFloat = 0.95
+    @State private var cropMaxY: CGFloat = 0.95
+    @State private var cropBodyStart: (CGFloat, CGFloat, CGFloat, CGFloat)?
+    @State private var cropHandleStart: (CGFloat, CGFloat, CGFloat, CGFloat)?
+    @State private var cropZoomScale: CGFloat = 1.0
+    @State private var cropZoomScaleStart: CGFloat = 1.0
+    @State private var cropPanOffset: CGSize = .zero
+
+    private var displayImage: UIImage { croppedImage ?? removedBg ?? original }
 
     private var cardBackground: Color {
         Color(UIColor { trait in
@@ -1167,12 +1416,13 @@ struct BgRemovePreviewSheet: View {
                 VStack(spacing: 0) {
                     if showingColorPicker {
                         colorPickerHeader
+                            .zIndex(1)
                         colorPickerContent
                     } else {
                         headerBar
                         imageArea
                         if !isLoading { colorSuggestionRow }
-                        if !isLoading && removedBg != nil { bgColorPicker }
+                        if !isLoading { bgColorPicker }
                         if !isLoading { actionButtons }
                     }
                 }
@@ -1191,17 +1441,37 @@ struct BgRemovePreviewSheet: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             withAnimation(.easeOut(duration: 0.25)) { keyboardHeight = 0 }
         }
+        .onAppear { selectedBg = existingBg }
         .task(id: isLoading) {
-            guard !isLoading, let bg = removedBg else { return }
+            guard !isLoading else { return }
+            colorAnalysisDone = false
+            let imageForDetection = removedBg ?? (isEditMode ? original : nil)
+            guard let img = imageForDetection else {
+                colorAnalysisDone = true
+                return
+            }
             paletteColor = existingColor?.isEmpty == false ? existingColor : nil
-            colorSuggestions = await ColorDetectionService.shared.detectColors(from: bg)
-            selectedSuggestion = colorSuggestions.first?.name
+            let results = await withTaskGroup(of: [ColorSuggestion]?.self) { group in
+                group.addTask { await ColorDetectionService.shared.detectColors(from: img) }
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    return nil
+                }
+                let first = await group.next() ?? nil
+                group.cancelAll()
+                return first ?? []
+            }
+            colorSuggestions = results
+            colorAnalysisDone = true
+            if selectedSuggestion == nil {
+                selectedSuggestion = paletteColor ?? results.first?.name
+            }
         }
     }
 
     private var headerBar: some View {
         ZStack {
-            Text("사진 등록")
+            Text(isEditMode ? "사진 수정" : "사진 등록")
                 .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(Color(.label))
             if !isLoading {
@@ -1231,9 +1501,8 @@ struct BgRemovePreviewSheet: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            let display = removedBg ?? original
             VStack(spacing: 6) {
-                Image(uiImage: display)
+                Image(uiImage: displayImage)
                     .resizable()
                     .scaledToFit()
                     .background {
@@ -1243,8 +1512,104 @@ struct BgRemovePreviewSheet: View {
                             CheckeredBackground()
                         }
                     }
+                    .scaleEffect(showCropView ? cropZoomScale : 1.0, anchor: .center)
+                    .offset(showCropView ? cropPanOffset : .zero)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if let error, removedBg == nil {
+                    .clipped()
+                    // 크롭 UI: 이미지 위에 직접 overlay
+                    .overlay {
+                        if showCropView {
+                            GeometryReader { geo in
+                                let imgFrame = cropZoomedFrame(base: cropImageFrame(in: geo.size), in: geo.size)
+                                let cropRect  = cropViewRect(imageFrame: imgFrame)
+                                ZStack {
+                                    cropOverlay(imageFrame: imgFrame, cropRect: cropRect)
+                                    Rectangle()
+                                        .stroke(Color.white, lineWidth: 1.5)
+                                        .frame(width: cropRect.width, height: cropRect.height)
+                                        .position(x: cropRect.midX, y: cropRect.midY)
+                                    cropGrid(cropRect: cropRect)
+                                    ForEach([0, 1, 2, 3], id: \.self) { i in
+                                        cropHandle(corner: i, cropRect: cropRect, imageFrame: imgFrame, viewSize: geo.size)
+                                    }
+                                    // 맨 위 레이어: hitTest로 핸들 터치는 통과, 나머지는 직접 수신
+                                    CropGestureView(
+                                        onPinchDelta: { delta in
+                                            cropZoomScale = max(1.0, min(4.0, cropZoomScale * delta))
+                                        },
+                                        onPanDelta: { delta in
+                                            guard imgFrame.width > 0, imgFrame.height > 0 else { return }
+                                            let dx = delta.width  / imgFrame.width
+                                            let dy = delta.height / imgFrame.height
+                                            let w = cropMaxX - cropMinX
+                                            let h = cropMaxY - cropMinY
+                                            let (visMinX, visMaxX, visMinY, visMaxY) = visibleCropBounds(imageFrame: imgFrame, viewSize: geo.size)
+                                            cropMinX = min(max(cropMinX + dx, visMinX), visMaxX - w)
+                                            cropMinY = min(max(cropMinY + dy, visMinY), visMaxY - h)
+                                            cropMaxX = cropMinX + w
+                                            cropMaxY = cropMinY + h
+                                        },
+                                        onTwoFingerPanDelta: { delta in
+                                            let base = cropImageFrame(in: geo.size)
+                                            let maxDx = base.width  * (cropZoomScale - 1) / 2
+                                            let maxDy = base.height * (cropZoomScale - 1) / 2
+                                            cropPanOffset.width  = max(-maxDx, min(maxDx, cropPanOffset.width  + delta.width))
+                                            cropPanOffset.height = max(-maxDy, min(maxDy, cropPanOffset.height + delta.height))
+                                        },
+                                        handlePositions: [
+                                            CGPoint(x: cropRect.minX, y: cropRect.minY),
+                                            CGPoint(x: cropRect.maxX, y: cropRect.minY),
+                                            CGPoint(x: cropRect.minX, y: cropRect.maxY),
+                                            CGPoint(x: cropRect.maxX, y: cropRect.maxY)
+                                        ]
+                                    )
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                            .clipped()
+                        }
+                    }
+                    // 크롭 버튼 (크롭 모드 아닐 때만)
+                    .overlay(alignment: .bottomTrailing) {
+                        if !showCropView {
+                            Button {
+                                cropMinX = 0.05; cropMinY = 0.05
+                                cropMaxX = 0.95; cropMaxY = 0.95
+                                cropZoomScale = 1.0; cropZoomScaleStart = 1.0; cropPanOffset = .zero
+                                showCropView = true
+                            } label: {
+                                Image(systemName: "crop")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 30, height: 30)
+                                    .background(Color.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+                            }
+                            .padding(6)
+                        }
+                    }
+
+                // 크롭 모드: 취소/적용 버튼
+                if showCropView {
+                    HStack(spacing: 10) {
+                        Button { cropZoomScale = 1.0; cropZoomScaleStart = 1.0; cropPanOffset = .zero; showCropView = false } label: {
+                            Text("취소")
+                                .frame(maxWidth: .infinity, minHeight: 36)
+                                .contentShape(Capsule())
+                        }
+                        .foregroundStyle(Color(.label))
+                        .background(Color.secondary.opacity(0.15), in: Capsule())
+                        Button { applyCrop() } label: {
+                            Text("적용")
+                                .frame(maxWidth: .infinity, minHeight: 36)
+                                .contentShape(Capsule())
+                        }
+                        .foregroundStyle(.white)
+                        .background(Color.accentColor, in: Capsule())
+                    }
+                    .font(.system(size: 14, weight: .medium))
+                    .padding(.horizontal, 4)
+                } else if let error, removedBg == nil {
                     Text(error)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -1255,6 +1620,7 @@ struct BgRemovePreviewSheet: View {
             .padding(.horizontal, 25)
             .padding(.bottom, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.easeInOut(duration: 0.2), value: showCropView)
         }
     }
 
@@ -1344,7 +1710,7 @@ struct BgRemovePreviewSheet: View {
                 // MARK: 추천
                 HStack(spacing: 10) {
                     if colorSuggestions.isEmpty {
-                        Text("분석 중...")
+                        Text(colorAnalysisDone ? "색상 감지 불가" : "분석 중...")
                             .font(.system(size: 10))
                             .foregroundStyle(Color(.tertiaryLabel))
                             .frame(maxWidth: .infinity)
@@ -1433,20 +1799,26 @@ struct BgRemovePreviewSheet: View {
 
     private var actionButtons: some View {
         HStack(spacing: 12) {
-            Button("다시 선택") { onCancel() }
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .foregroundStyle(Color(.label))
-                .background(cardBackground)
-                .clipShape(Capsule())
-                .overlay(Capsule().strokeBorder(Color(.label), lineWidth: 1.5))
+            Button { onCancel() } label: {
+                Text(isEditMode ? "취소" : cancelLabel)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .contentShape(Capsule())
+            }
+            .foregroundStyle(Color(.label))
+            .background(cardBackground)
+            .clipShape(Capsule())
+            .overlay(Capsule().strokeBorder(Color(.label), lineWidth: 1.5))
 
-            Button("사진 등록") { onAccept(compositeImage(), selectedSuggestion) }
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .foregroundStyle(cardBackground)
-                .background(Color(.label))
-                .clipShape(Capsule())
+            Button { onAccept(compositeImage(), selectedSuggestion, selectedBg) } label: {
+                Text(isEditMode ? "저장" : "사진 등록")
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .contentShape(Capsule())
+            }
+            .foregroundStyle(cardBackground)
+            .background(Color(.label))
+            .clipShape(Capsule())
         }
         .font(.system(size: 15, weight: .medium))
         .padding(.horizontal, 20)
@@ -1454,8 +1826,8 @@ struct BgRemovePreviewSheet: View {
     }
 
     private func compositeImage() -> UIImage {
-        let base = removedBg ?? original
-        guard removedBg != nil, let bgColor = selectedBg.uiColor else { return base }
+        let base = displayImage
+        guard (removedBg != nil || isEditMode), let bgColor = selectedBg.uiColor else { return base }
         let format = UIGraphicsImageRendererFormat()
         format.scale = base.scale
         format.opaque = true
@@ -1464,6 +1836,168 @@ struct BgRemovePreviewSheet: View {
             UIRectFill(CGRect(origin: .zero, size: base.size))
             base.draw(at: .zero)
         }
+    }
+
+    // MARK: Inline Crop
+    private func cropImageFrame(in size: CGSize) -> CGRect {
+        let imgAspect = displayImage.size.width / displayImage.size.height
+        let cAspect   = size.width / size.height
+        let displaySize: CGSize = imgAspect > cAspect
+            ? CGSize(width: size.width,            height: size.width / imgAspect)
+            : CGSize(width: size.height * imgAspect, height: size.height)
+        return CGRect(
+            x: (size.width  - displaySize.width)  / 2,
+            y: (size.height - displaySize.height) / 2,
+            width:  displaySize.width,
+            height: displaySize.height
+        )
+    }
+
+    private func cropZoomedFrame(base: CGRect, in size: CGSize) -> CGRect {
+        let cx = size.width / 2
+        let cy = size.height / 2
+        return CGRect(
+            x: cx + (base.minX - cx) * cropZoomScale + cropPanOffset.width,
+            y: cy + (base.minY - cy) * cropZoomScale + cropPanOffset.height,
+            width: base.width * cropZoomScale,
+            height: base.height * cropZoomScale
+        )
+    }
+
+    private func cropViewRect(imageFrame: CGRect) -> CGRect {
+        CGRect(
+            x: imageFrame.minX + cropMinX * imageFrame.width,
+            y: imageFrame.minY + cropMinY * imageFrame.height,
+            width:  (cropMaxX - cropMinX) * imageFrame.width,
+            height: (cropMaxY - cropMinY) * imageFrame.height
+        )
+    }
+
+    @ViewBuilder
+    private func cropOverlay(imageFrame: CGRect, cropRect: CGRect) -> some View {
+        let c = Color.black.opacity(0.55)
+        let t = max(cropRect.minY - imageFrame.minY, 0)
+        let b = max(imageFrame.maxY - cropRect.maxY, 0)
+        let l = max(cropRect.minX - imageFrame.minX, 0)
+        let r = max(imageFrame.maxX - cropRect.maxX, 0)
+        Rectangle().fill(c).frame(width: imageFrame.width, height: t)
+            .position(x: imageFrame.midX, y: imageFrame.minY + t / 2)
+        Rectangle().fill(c).frame(width: imageFrame.width, height: b)
+            .position(x: imageFrame.midX, y: cropRect.maxY + b / 2)
+        Rectangle().fill(c).frame(width: l, height: cropRect.height)
+            .position(x: imageFrame.minX + l / 2, y: cropRect.midY)
+        Rectangle().fill(c).frame(width: r, height: cropRect.height)
+            .position(x: cropRect.maxX + r / 2, y: cropRect.midY)
+    }
+
+    @ViewBuilder
+    private func cropGrid(cropRect: CGRect) -> some View {
+        let lc = Color.white.opacity(0.3)
+        Rectangle().fill(lc).frame(width: 0.5, height: cropRect.height)
+            .position(x: cropRect.minX + cropRect.width / 3, y: cropRect.midY)
+        Rectangle().fill(lc).frame(width: 0.5, height: cropRect.height)
+            .position(x: cropRect.minX + cropRect.width * 2 / 3, y: cropRect.midY)
+        Rectangle().fill(lc).frame(width: cropRect.width, height: 0.5)
+            .position(x: cropRect.midX, y: cropRect.minY + cropRect.height / 3)
+        Rectangle().fill(lc).frame(width: cropRect.width, height: 0.5)
+            .position(x: cropRect.midX, y: cropRect.minY + cropRect.height * 2 / 3)
+    }
+
+    private func visibleCropBounds(imageFrame: CGRect, viewSize: CGSize) -> (minX: CGFloat, maxX: CGFloat, minY: CGFloat, maxY: CGFloat) {
+        guard imageFrame.width > 0, imageFrame.height > 0 else { return (0, 1, 0, 1) }
+        let minX = max(0, -imageFrame.minX / imageFrame.width)
+        let maxX = min(1, (viewSize.width  - imageFrame.minX) / imageFrame.width)
+        let minY = max(0, -imageFrame.minY / imageFrame.height)
+        let maxY = min(1, (viewSize.height - imageFrame.minY) / imageFrame.height)
+        return (minX, maxX, minY, maxY)
+    }
+
+    private func cropBodyGesture(imageFrame: CGRect, viewSize: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 2)
+            .onChanged { value in
+                if cropBodyStart == nil {
+                    cropBodyStart = (cropMinX, cropMinY, cropMaxX, cropMaxY)
+                }
+                guard let b = cropBodyStart, imageFrame.width > 0, imageFrame.height > 0 else { return }
+                let dx = value.translation.width  / imageFrame.width
+                let dy = value.translation.height / imageFrame.height
+                let w = b.2 - b.0; let h = b.3 - b.1
+                let (visMinX, visMaxX, visMinY, visMaxY) = visibleCropBounds(imageFrame: imageFrame, viewSize: viewSize)
+                cropMinX = Swift.min(Swift.max(b.0 + dx, visMinX), visMaxX - w)
+                cropMinY = Swift.min(Swift.max(b.1 + dy, visMinY), visMaxY - h)
+                cropMaxX = cropMinX + w
+                cropMaxY = cropMinY + h
+            }
+            .onEnded { _ in cropBodyStart = nil }
+    }
+
+    @ViewBuilder
+    private func cropHandle(corner: Int, cropRect: CGRect, imageFrame: CGRect, viewSize: CGSize) -> some View {
+        let pos: CGPoint = switch corner {
+        case 0: CGPoint(x: cropRect.minX, y: cropRect.minY)
+        case 1: CGPoint(x: cropRect.maxX, y: cropRect.minY)
+        case 2: CGPoint(x: cropRect.minX, y: cropRect.maxY)
+        default: CGPoint(x: cropRect.maxX, y: cropRect.maxY)
+        }
+        Circle()
+            .fill(Color.white)
+            .frame(width: 22, height: 22)
+            .shadow(color: .black.opacity(0.3), radius: 2)
+            .position(pos)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if cropHandleStart == nil {
+                            cropHandleStart = (cropMinX, cropMinY, cropMaxX, cropMaxY)
+                        }
+                        guard let b = cropHandleStart, imageFrame.width > 0, imageFrame.height > 0 else { return }
+                        let dx = value.translation.width  / imageFrame.width
+                        let dy = value.translation.height / imageFrame.height
+                        let minF: CGFloat = 0.05
+                        let (visMinX, visMaxX, visMinY, visMaxY) = visibleCropBounds(imageFrame: imageFrame, viewSize: viewSize)
+                        switch corner {
+                        case 0:
+                            cropMinX = Swift.min(Swift.max(b.0 + dx, visMinX), b.2 - minF)
+                            cropMinY = Swift.min(Swift.max(b.1 + dy, visMinY), b.3 - minF)
+                        case 1:
+                            cropMaxX = Swift.min(Swift.max(b.2 + dx, b.0 + minF), visMaxX)
+                            cropMinY = Swift.min(Swift.max(b.1 + dy, visMinY), b.3 - minF)
+                        case 2:
+                            cropMinX = Swift.min(Swift.max(b.0 + dx, visMinX), b.2 - minF)
+                            cropMaxY = Swift.min(Swift.max(b.3 + dy, b.1 + minF), visMaxY)
+                        default:
+                            cropMaxX = Swift.min(Swift.max(b.2 + dx, b.0 + minF), visMaxX)
+                            cropMaxY = Swift.min(Swift.max(b.3 + dy, b.1 + minF), visMaxY)
+                        }
+                    }
+                    .onEnded { _ in cropHandleStart = nil }
+            )
+    }
+
+    private func applyCrop() {
+        let source = displayImage
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        format.scale = source.scale
+
+        // 1. orientation 정규화
+        let oriented = UIGraphicsImageRenderer(size: source.size, format: format)
+            .image { _ in source.draw(at: .zero) }
+
+        // 2. 포인트 단위로 크롭 영역 계산
+        let cropPt = CGRect(
+            x: cropMinX * oriented.size.width,
+            y: cropMinY * oriented.size.height,
+            width:  (cropMaxX - cropMinX) * oriented.size.width,
+            height: (cropMaxY - cropMinY) * oriented.size.height
+        )
+        guard cropPt.width > 0, cropPt.height > 0 else { showCropView = false; return }
+
+        // 3. 포인트 기반 렌더러로 크롭 (픽셀 좌표 변환 불필요)
+        croppedImage = UIGraphicsImageRenderer(size: cropPt.size, format: format)
+            .image { _ in oriented.draw(at: CGPoint(x: -cropPt.origin.x, y: -cropPt.origin.y)) }
+        cropZoomScale = 1.0; cropZoomScaleStart = 1.0; cropPanOffset = .zero
+        showCropView = false
     }
 
     private var colorPickerHeader: some View {
@@ -1745,6 +2279,7 @@ struct AddClothingView: View {
     @State private var purchasePlace = ""
 
     @State private var selectedImages: [UIImage] = []
+    @State private var imageBgOptions: [PhotoBgOption] = []
     @State private var showSourcePicker = false
     @State private var showCamera = false
     @State private var showGallery = false
@@ -1756,6 +2291,8 @@ struct AddClothingView: View {
     @State private var isRemovingBg = false
     @State private var showBgPreview = false
     @State private var bgRemoveError: String?
+    @State private var editingImageIndex: Int? = nil
+    @State private var isFromCamera = false
 
     var body: some View {
         NavigationStack {
@@ -1857,8 +2394,8 @@ struct AddClothingView: View {
                 }
             }
             .confirmationDialog("사진 추가 방법 선택", isPresented: $showSourcePicker) {
-                Button("카메라로 촬영") { showCamera = true }
-                Button("갤러리에서 선택") { showGallery = true }
+                Button("카메라로 촬영") { isFromCamera = true; showCamera = true }
+                Button("갤러리에서 선택") { isFromCamera = false; showGallery = true }
                 Button("취소", role: .cancel) {}
             }
             .photosPicker(isPresented: $showGallery, selection: $galleryItems, maxSelectionCount: 5 - selectedImages.count, matching: .images)
@@ -1875,14 +2412,47 @@ struct AddClothingView: View {
                             removedBg: removedBgImage,
                             isLoading: isRemovingBg,
                             error: bgRemoveError,
-                            existingColor: color.isEmpty ? nil : color
-                        ) { finalImage, detectedColor in
+                            existingColor: color.isEmpty ? nil : color,
+                            cancelLabel: isFromCamera ? "다시 촬영" : "다시 선택"
+                        ) { finalImage, detectedColor, bg in
                             selectedImages.append(finalImage)
+                            imageBgOptions.append(bg)
                             if let c = detectedColor { color = c }
                             finishBgPreview()
                         } onCancel: {
+                            let fromCamera = isFromCamera
                             pendingImages = []
                             finishBgPreview()
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(450))
+                                if fromCamera { showCamera = true } else { showGallery = true }
+                            }
+                        }
+                        .toolbar(.hidden, for: .navigationBar)
+                    }
+                }
+            }
+            .fullScreenCover(isPresented: Binding(
+                get: { editingImageIndex != nil },
+                set: { if !$0 { editingImageIndex = nil } }
+            )) {
+                if let idx = editingImageIndex, idx < selectedImages.count {
+                    NavigationStack {
+                        BgRemovePreviewSheet(
+                            original: selectedImages[idx],
+                            removedBg: nil,
+                            isLoading: false,
+                            error: nil,
+                            existingColor: color.isEmpty ? nil : color,
+                            isEditMode: true,
+                            existingBg: idx < imageBgOptions.count ? imageBgOptions[idx] : .transparent
+                        ) { finalImage, detectedColor, bg in
+                            selectedImages[idx] = finalImage
+                            if idx < imageBgOptions.count { imageBgOptions[idx] = bg } else { imageBgOptions.append(bg) }
+                            if let c = detectedColor, !c.isEmpty { color = c }
+                            editingImageIndex = nil
+                        } onCancel: {
+                            editingImageIndex = nil
                         }
                         .toolbar(.hidden, for: .navigationBar)
                     }
@@ -1960,9 +2530,12 @@ struct AddClothingView: View {
                             .scaledToFill()
                             .frame(width: 88, height: 88)
                             .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .contentShape(Rectangle())
+                            .onTapGesture { editingImageIndex = idx }
                             .overlay(alignment: .topTrailing) {
                                 Button {
                                     selectedImages.remove(at: idx)
+                                    if idx < imageBgOptions.count { imageBgOptions.remove(at: idx) }
                                     if selectedImages.isEmpty { color = "" }
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
@@ -2197,7 +2770,7 @@ struct EditClothingView: View {
                             isLoading: isRemovingBg,
                             error: bgRemoveError,
                             existingColor: color.isEmpty ? nil : color
-                        ) { finalImage, detectedColor in
+                        ) { finalImage, detectedColor, _ in
                             selectedImages.append(finalImage)
                             if let c = detectedColor { color = c }
                             finishBgPreview()
@@ -2342,5 +2915,244 @@ struct EditClothingView: View {
             await viewModel.updateClothing(updated)
             dismiss()
         }
+    }
+}
+
+// MARK: - Image Crop View
+
+struct ImageCropView: View {
+    let image: UIImage
+    let onCrop: (UIImage) -> Void
+    let onCancel: () -> Void
+
+    @State private var cropMinX: CGFloat = 0.05
+    @State private var cropMinY: CGFloat = 0.05
+    @State private var cropMaxX: CGFloat = 0.95
+    @State private var cropMaxY: CGFloat = 0.95
+
+    @State private var bodyDragInitial: CropBounds?
+    @State private var handleDragInitial: CropBounds?
+
+    private let minCropFraction: CGFloat = 0.05
+    private let handleSize: CGFloat = 22
+
+    private struct CropBounds {
+        var minX, minY, maxX, maxY: CGFloat
+    }
+
+    private enum CropCorner: CaseIterable {
+        case topLeft, topRight, bottomLeft, bottomRight
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            GeometryReader { geo in
+                let imgFrame = imageDisplayFrame(in: geo.size)
+                let cropView  = cropRectInView(imageFrame: imgFrame)
+
+                ZStack {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: imgFrame.width, height: imgFrame.height)
+                        .position(x: imgFrame.midX, y: imgFrame.midY)
+
+                    overlayRects(imageFrame: imgFrame, cropRect: cropView)
+
+                    Rectangle()
+                        .stroke(Color.white, lineWidth: 1.5)
+                        .frame(width: cropView.width, height: cropView.height)
+                        .position(x: cropView.midX, y: cropView.midY)
+
+                    gridLines(cropRect: cropView)
+
+                    Color.clear
+                        .frame(
+                            width: max(cropView.width - handleSize * 2, 0),
+                            height: max(cropView.height - handleSize * 2, 0)
+                        )
+                        .position(x: cropView.midX, y: cropView.midY)
+                        .gesture(bodyMoveGesture(imageFrame: imgFrame))
+
+                    ForEach(CropCorner.allCases, id: \.self) { corner in
+                        cornerHandle(corner: corner, cropRect: cropView, imageFrame: imgFrame)
+                    }
+                }
+            }
+
+            VStack {
+                Spacer()
+                HStack {
+                    Button("취소") { onCancel() }
+                        .foregroundStyle(.white)
+                        .font(.body)
+                    Spacer()
+                    Button("적용") { performCrop() }
+                        .foregroundStyle(Color.accentColor)
+                        .font(.body.bold())
+                }
+                .padding(.horizontal, 28)
+                .padding(.vertical, 16)
+                .background(Color.black.opacity(0.7))
+            }
+        }
+    }
+
+    // MARK: Geometry
+
+    private func imageDisplayFrame(in size: CGSize) -> CGRect {
+        let imgAspect = image.size.width / image.size.height
+        let containerAspect = size.width / size.height
+        let displaySize: CGSize
+        if imgAspect > containerAspect {
+            displaySize = CGSize(width: size.width, height: size.width / imgAspect)
+        } else {
+            displaySize = CGSize(width: size.height * imgAspect, height: size.height)
+        }
+        return CGRect(
+            x: (size.width  - displaySize.width)  / 2,
+            y: (size.height - displaySize.height) / 2,
+            width:  displaySize.width,
+            height: displaySize.height
+        )
+    }
+
+    private func cropRectInView(imageFrame: CGRect) -> CGRect {
+        CGRect(
+            x: imageFrame.minX + cropMinX * imageFrame.width,
+            y: imageFrame.minY + cropMinY * imageFrame.height,
+            width:  (cropMaxX - cropMinX) * imageFrame.width,
+            height: (cropMaxY - cropMinY) * imageFrame.height
+        )
+    }
+
+    // MARK: Overlay
+
+    @ViewBuilder
+    private func overlayRects(imageFrame: CGRect, cropRect: CGRect) -> some View {
+        let c = Color.black.opacity(0.55)
+        let top    = max(cropRect.minY - imageFrame.minY, 0)
+        let bottom = max(imageFrame.maxY - cropRect.maxY, 0)
+        let left   = max(cropRect.minX - imageFrame.minX, 0)
+        let right  = max(imageFrame.maxX - cropRect.maxX, 0)
+
+        Rectangle().fill(c)
+            .frame(width: imageFrame.width, height: top)
+            .position(x: imageFrame.midX, y: imageFrame.minY + top / 2)
+        Rectangle().fill(c)
+            .frame(width: imageFrame.width, height: bottom)
+            .position(x: imageFrame.midX, y: cropRect.maxY + bottom / 2)
+        Rectangle().fill(c)
+            .frame(width: left, height: cropRect.height)
+            .position(x: imageFrame.minX + left / 2, y: cropRect.midY)
+        Rectangle().fill(c)
+            .frame(width: right, height: cropRect.height)
+            .position(x: cropRect.maxX + right / 2, y: cropRect.midY)
+    }
+
+    @ViewBuilder
+    private func gridLines(cropRect: CGRect) -> some View {
+        let lc = Color.white.opacity(0.3)
+        Rectangle().fill(lc)
+            .frame(width: 0.5, height: cropRect.height)
+            .position(x: cropRect.minX + cropRect.width / 3, y: cropRect.midY)
+        Rectangle().fill(lc)
+            .frame(width: 0.5, height: cropRect.height)
+            .position(x: cropRect.minX + cropRect.width * 2 / 3, y: cropRect.midY)
+        Rectangle().fill(lc)
+            .frame(width: cropRect.width, height: 0.5)
+            .position(x: cropRect.midX, y: cropRect.minY + cropRect.height / 3)
+        Rectangle().fill(lc)
+            .frame(width: cropRect.width, height: 0.5)
+            .position(x: cropRect.midX, y: cropRect.minY + cropRect.height * 2 / 3)
+    }
+
+    // MARK: Gestures
+
+    private func bodyMoveGesture(imageFrame: CGRect) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if bodyDragInitial == nil {
+                    bodyDragInitial = CropBounds(minX: cropMinX, minY: cropMinY, maxX: cropMaxX, maxY: cropMaxY)
+                }
+                guard let b = bodyDragInitial, imageFrame.width > 0, imageFrame.height > 0 else { return }
+                let dx = value.translation.width  / imageFrame.width
+                let dy = value.translation.height / imageFrame.height
+                let w = b.maxX - b.minX
+                let h = b.maxY - b.minY
+                cropMinX = clamp(b.minX + dx, lo: 0, hi: 1 - w)
+                cropMinY = clamp(b.minY + dy, lo: 0, hi: 1 - h)
+                cropMaxX = cropMinX + w
+                cropMaxY = cropMinY + h
+            }
+            .onEnded { _ in bodyDragInitial = nil }
+    }
+
+    @ViewBuilder
+    private func cornerHandle(corner: CropCorner, cropRect: CGRect, imageFrame: CGRect) -> some View {
+        let pos: CGPoint = switch corner {
+        case .topLeft:     CGPoint(x: cropRect.minX, y: cropRect.minY)
+        case .topRight:    CGPoint(x: cropRect.maxX, y: cropRect.minY)
+        case .bottomLeft:  CGPoint(x: cropRect.minX, y: cropRect.maxY)
+        case .bottomRight: CGPoint(x: cropRect.maxX, y: cropRect.maxY)
+        }
+
+        Circle()
+            .fill(Color.white)
+            .frame(width: handleSize, height: handleSize)
+            .shadow(color: .black.opacity(0.3), radius: 2)
+            .position(pos)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if handleDragInitial == nil {
+                            handleDragInitial = CropBounds(minX: cropMinX, minY: cropMinY, maxX: cropMaxX, maxY: cropMaxY)
+                        }
+                        guard let b = handleDragInitial, imageFrame.width > 0, imageFrame.height > 0 else { return }
+                        let dx = value.translation.width  / imageFrame.width
+                        let dy = value.translation.height / imageFrame.height
+                        switch corner {
+                        case .topLeft:
+                            cropMinX = clamp(b.minX + dx, lo: 0, hi: b.maxX - minCropFraction)
+                            cropMinY = clamp(b.minY + dy, lo: 0, hi: b.maxY - minCropFraction)
+                        case .topRight:
+                            cropMaxX = clamp(b.maxX + dx, lo: b.minX + minCropFraction, hi: 1)
+                            cropMinY = clamp(b.minY + dy, lo: 0, hi: b.maxY - minCropFraction)
+                        case .bottomLeft:
+                            cropMinX = clamp(b.minX + dx, lo: 0, hi: b.maxX - minCropFraction)
+                            cropMaxY = clamp(b.maxY + dy, lo: b.minY + minCropFraction, hi: 1)
+                        case .bottomRight:
+                            cropMaxX = clamp(b.maxX + dx, lo: b.minX + minCropFraction, hi: 1)
+                            cropMaxY = clamp(b.maxY + dy, lo: b.minY + minCropFraction, hi: 1)
+                        }
+                    }
+                    .onEnded { _ in handleDragInitial = nil }
+            )
+    }
+
+    // MARK: Crop
+
+    private func performCrop() {
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        format.scale = image.scale
+        let oriented = UIGraphicsImageRenderer(size: image.size, format: format)
+            .image { _ in image.draw(at: .zero) }
+        let cropPt = CGRect(
+            x: cropMinX * oriented.size.width,
+            y: cropMinY * oriented.size.height,
+            width:  (cropMaxX - cropMinX) * oriented.size.width,
+            height: (cropMaxY - cropMinY) * oriented.size.height
+        )
+        guard cropPt.width > 0, cropPt.height > 0 else { onCancel(); return }
+        let cropped = UIGraphicsImageRenderer(size: cropPt.size, format: format)
+            .image { _ in oriented.draw(at: CGPoint(x: -cropPt.origin.x, y: -cropPt.origin.y)) }
+        onCrop(cropped)
+    }
+
+    private func clamp(_ value: CGFloat, lo: CGFloat, hi: CGFloat) -> CGFloat {
+        Swift.min(Swift.max(value, lo), hi)
     }
 }
