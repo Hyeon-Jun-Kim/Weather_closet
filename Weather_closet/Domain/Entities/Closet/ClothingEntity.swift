@@ -10,7 +10,7 @@ struct ClothingEntity: Identifiable {
     var color: String
     var size: ClothingSize
     var alterationHistory: [AlterationRecord]
-    var rating: Int
+    var rating: Double
     var review: String
     var wearCount: Int
     var purchaseDate: Date?

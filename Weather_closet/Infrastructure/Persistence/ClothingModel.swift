@@ -15,7 +15,7 @@ final class ClothingModel {
     var sizeChest: Double?
     var sizeSleeve: Double?
     var sizeLength: Double?
-    var ratingValue: Int
+    var ratingValue: Double
     var review: String
     var wearCount: Int
     var purchaseDate: Date?

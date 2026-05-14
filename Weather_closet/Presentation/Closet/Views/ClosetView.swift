@@ -286,8 +286,23 @@ struct ClothingCard: View {
                         .background(Color.accentColor.opacity(0.15))
                         .clipShape(Capsule())
                     Spacer()
-                    Text(String(repeating: "⭐️", count: max(0, min(clothing.rating, 5))))
+                    if clothing.rating > 0 {
+                        HStack(spacing: 1) {
+                            ForEach(1...5, id: \.self) { star in
+                                Group {
+                                    if clothing.rating >= Double(star) {
+                                        Image(systemName: "star.fill")
+                                    } else if clothing.rating >= Double(star) - 0.5 {
+                                        Image(systemName: "star.leadinghalf.filled")
+                                    } else {
+                                        Image(systemName: "star")
+                                    }
+                                }
+                                .foregroundStyle(clothing.rating >= Double(star) - 0.5 ? .yellow : Color(.systemGray4))
+                            }
+                        }
                         .font(.caption2)
+                    }
                 }
             }
         }
@@ -325,7 +340,7 @@ struct ClothingDetailView: View {
                     }
                     InfoSection(title: "착용 정보") {
                         InfoRow(label: "착용 횟수", value: "\(clothing.wearCount)회")
-                        InfoRow(label: "만족도", value: "\(clothing.rating)점")
+                        InfoRow(label: "별점", value: clothing.rating > 0 ? "\(ratingString(clothing.rating)) / 5" : "-")
                     }
                     if clothing.purchasePrice != nil || !clothing.purchasePlace.isEmpty {
                         InfoSection(title: "구매 정보") {
@@ -1001,6 +1016,107 @@ private struct TransparentBackground: UIViewRepresentable {
     func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
+// Form 배경 탭 시 키보드 닫기 — UIScrollView에 cancelsTouchesInView=false 제스처 설치
+private struct KeyboardDismissSetup: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        let coordinator = context.coordinator
+        DispatchQueue.main.async { [weak view] in
+            var parent: UIView? = view?.superview
+            while let p = parent {
+                if let scroll = p as? UIScrollView {
+                    let tap = UITapGestureRecognizer(target: coordinator, action: #selector(Coordinator.handleTap))
+                    tap.cancelsTouchesInView = false
+                    tap.delegate = coordinator
+                    scroll.addGestureRecognizer(tap)
+                    coordinator.scrollView = scroll
+                    coordinator.gesture = tap
+                    break
+                }
+                parent = p.superview
+            }
+        }
+        return view
+    }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        weak var scrollView: UIScrollView?
+        weak var gesture: UITapGestureRecognizer?
+
+        deinit {
+            guard let g = gesture, let s = scrollView else { return }
+            DispatchQueue.main.async { s.removeGestureRecognizer(g) }
+        }
+
+        @objc func handleTap() {
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+            )
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let view = touch.view else { return true }
+            // 셀 경계(UICollectionViewCell/UITableViewCell)까지 올라가면서
+            // 각 레벨의 전체 서브트리를 탐색 — 형제 뷰인 UITextField도 감지
+            var current: UIView? = view
+            while let v = current {
+                if hasTextField(v, depth: 5) { return false }
+                if v is UICollectionViewCell || v is UITableViewCell { break }
+                current = v.superview
+            }
+            return true
+        }
+
+        private func hasTextField(_ view: UIView, depth: Int) -> Bool {
+            if view is UITextField { return true }
+            guard depth > 0 else { return false }
+            return view.subviews.contains { hasTextField($0, depth: depth - 1) }
+        }
+    }
+}
+
+private struct StarRatingPicker: View {
+    @Binding var rating: Double
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(1...5, id: \.self) { star in
+                ZStack {
+                    starImage(for: star)
+                        .foregroundStyle(rating >= Double(star) - 0.5 ? .yellow : Color(.systemGray4))
+                        .allowsHitTesting(false)
+                    HStack(spacing: 0) {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { rating = rating == Double(star) - 0.5 ? 0 : Double(star) - 0.5 }
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { rating = rating == Double(star) ? 0 : Double(star) }
+                    }
+                }
+                .font(.system(size: 40))
+                .frame(width: 48, height: 48)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    @ViewBuilder
+    private func starImage(for star: Int) -> some View {
+        if rating >= Double(star)       { Image(systemName: "star.fill") }
+        else if rating >= Double(star) - 0.5 { Image(systemName: "star.leadinghalf.filled") }
+        else                            { Image(systemName: "star") }
+    }
+}
+
+// 별점을 "3" 또는 "3.5" 형태로 포맷
+private func ratingString(_ r: Double) -> String {
+    r.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(r)) : String(format: "%.1f", r)
+}
+
 struct ImageColorPickerSheet: View {
     let images: [UIImage]
     let onSelect: (String) -> Void
@@ -1302,9 +1418,11 @@ struct InfoRow: View {
     }
 }
 
-struct SizeMeasurementRow: View {
+struct SizeMeasurementRow<F: Hashable>: View {
     let label: String
     @Binding var value: String
+    var focusBinding: FocusState<F?>.Binding
+    let field: F
 
     var body: some View {
         HStack {
@@ -1315,10 +1433,13 @@ struct SizeMeasurementRow: View {
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 70)
+                .focused(focusBinding, equals: field)
             Text("cm")
                 .foregroundStyle(.secondary)
                 .font(.subheadline)
         }
+        .contentShape(Rectangle())
+        .onTapGesture { focusBinding.wrappedValue = field }
     }
 }
 
@@ -2319,7 +2440,7 @@ struct CameraPickerView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
 
-    final class Coordinator: NSObject, @preconcurrency UINavigationControllerDelegate, @preconcurrency UIImagePickerControllerDelegate {
+    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
         private let onSelect: (UIImage) -> Void
         private let dismiss: DismissAction
 
@@ -2347,6 +2468,11 @@ struct AddClothingView: View {
     @EnvironmentObject var viewModel: ClosetViewModel
     @Environment(\.dismiss) private var dismiss
 
+    private enum Field: Hashable {
+        case name, brand, sizeLabel, shoulder, chest, sleeve, length, price, link
+    }
+    @FocusState private var focusedField: Field?
+
     @State private var name = ""
     @State private var brand = ""
     @State private var category: ClothingCategory = .top
@@ -2361,6 +2487,7 @@ struct AddClothingView: View {
     @State private var sizeLength = ""
     @State private var purchasePrice = ""
     @State private var purchasePlace = ""
+    @State private var rating: Double = 0
 
     @State private var selectedImages: [UIImage] = []
     @State private var imageBgOptions: [PhotoBgOption] = []
@@ -2384,7 +2511,10 @@ struct AddClothingView: View {
                 photoSection
                 Section("기본 정보") {
                     TextField("이름", text: $name)
+                        .focused($focusedField, equals: .name)
+                        .background(KeyboardDismissSetup())
                     TextField("브랜드", text: $brand)
+                        .focused($focusedField, equals: .brand)
                     Picker("카테고리", selection: $category) {
                         ForEach(ClothingCategory.allCases, id: \.self) { c in
                             Text(c.rawValue).tag(c)
@@ -2407,6 +2537,7 @@ struct AddClothingView: View {
                 }
                 Section("사이즈") {
                     TextField("표기 사이즈 (예: M, 95, 100)", text: $sizeLabel)
+                        .focused($focusedField, equals: .sizeLabel)
                     Toggle(isOn: $showDetailSize) {
                         Text("상세 사이즈")
                             .font(.subheadline)
@@ -2420,10 +2551,10 @@ struct AddClothingView: View {
                         }
                     }
                     if showDetailSize {
-                        SizeMeasurementRow(label: "어깨단면", value: $sizeShoulder)
-                        SizeMeasurementRow(label: "가슴단면", value: $sizeChest)
-                        SizeMeasurementRow(label: "소매길이", value: $sizeSleeve)
-                        SizeMeasurementRow(label: "총장",    value: $sizeLength)
+                        SizeMeasurementRow(label: "어깨단면", value: $sizeShoulder, focusBinding: $focusedField, field: Field.shoulder)
+                        SizeMeasurementRow(label: "가슴단면", value: $sizeChest,    focusBinding: $focusedField, field: Field.chest)
+                        SizeMeasurementRow(label: "소매길이", value: $sizeSleeve,   focusBinding: $focusedField, field: Field.sleeve)
+                        SizeMeasurementRow(label: "총장",    value: $sizeLength,   focusBinding: $focusedField, field: Field.length)
                     }
                 }
                 Section("구매 정보 (선택)") {
@@ -2435,20 +2566,44 @@ struct AddClothingView: View {
                             .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 130)
+                            .focused($focusedField, equals: .price)
                         Text("원")
                             .foregroundStyle(.secondary)
                             .font(.subheadline)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { focusedField = .price }
                     TextField("제품 링크", text: $purchasePlace)
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .focused($focusedField, equals: .link)
+                }
+                Section("별점") {
+                    StarRatingPicker(rating: $rating)
+                        .padding(.vertical, 4)
                 }
             }
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 60).allowsHitTesting(false) }
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("옷 추가")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Button(action: addFocusPrevious) {
+                        Image(systemName: "chevron.up")
+                    }
+                    .disabled(addPreviousField == nil)
+                    Button(action: addFocusNext) {
+                        Image(systemName: "chevron.down")
+                    }
+                    .disabled(addNextField == nil)
+                    Spacer()
+                    Button("완료") {
+                        focusedField = nil
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("취소") { dismiss() }
                 }
@@ -2642,6 +2797,23 @@ struct AddClothingView: View {
         }
     }
 
+    private var addOrderedFields: [Field] {
+        var fields: [Field] = [.name, .brand, .sizeLabel]
+        if showDetailSize { fields += [.shoulder, .chest, .sleeve, .length] }
+        fields += [.price, .link]
+        return fields
+    }
+    private var addPreviousField: Field? {
+        guard let cur = focusedField, let idx = addOrderedFields.firstIndex(of: cur), idx > 0 else { return nil }
+        return addOrderedFields[idx - 1]
+    }
+    private var addNextField: Field? {
+        guard let cur = focusedField, let idx = addOrderedFields.firstIndex(of: cur), idx + 1 < addOrderedFields.count else { return nil }
+        return addOrderedFields[idx + 1]
+    }
+    private func addFocusPrevious() { focusedField = addPreviousField }
+    private func addFocusNext()     { focusedField = addNextField }
+
     private func save() {
         Task { @MainActor in
             let clothingID = UUID()
@@ -2668,7 +2840,7 @@ struct AddClothingView: View {
                     length: Double(sizeLength)
                 ),
                 alterationHistory: [],
-                rating: 0,
+                rating: rating,
                 review: "",
                 wearCount: 0,
                 purchaseDate: Date(),
@@ -2692,6 +2864,11 @@ struct EditClothingView: View {
 
     let original: ClothingEntity
 
+    private enum Field: Hashable {
+        case name, brand, sizeLabel, shoulder, chest, sleeve, length, price, link
+    }
+    @FocusState private var focusedField: Field?
+
     @State private var name: String
     @State private var brand: String
     @State private var category: ClothingCategory
@@ -2706,6 +2883,7 @@ struct EditClothingView: View {
     @State private var sizeLength: String
     @State private var purchasePrice: String
     @State private var purchasePlace: String
+    @State private var rating: Double
 
     @State private var selectedImages: [UIImage] = []
     @State private var showSourcePicker = false
@@ -2738,6 +2916,7 @@ struct EditClothingView: View {
         _sizeLength    = State(initialValue: clothing.size.length.map   { String($0) } ?? "")
         _purchasePrice = State(initialValue: clothing.purchasePrice.map { String(Int($0)) } ?? "")
         _purchasePlace = State(initialValue: clothing.purchasePlace)
+        _rating        = State(initialValue: clothing.rating)
     }
 
     var body: some View {
@@ -2746,7 +2925,10 @@ struct EditClothingView: View {
                 photoSection
                 Section("기본 정보") {
                     TextField("이름", text: $name)
+                        .focused($focusedField, equals: .name)
+                        .background(KeyboardDismissSetup())
                     TextField("브랜드", text: $brand)
+                        .focused($focusedField, equals: .brand)
                     Picker("카테고리", selection: $category) {
                         ForEach(ClothingCategory.allCases, id: \.self) { c in
                             Text(c.rawValue).tag(c)
@@ -2769,6 +2951,7 @@ struct EditClothingView: View {
                 }
                 Section("사이즈") {
                     TextField("표기 사이즈 (예: M, 95, 100)", text: $sizeLabel)
+                        .focused($focusedField, equals: .sizeLabel)
                     Toggle(isOn: $showDetailSize) {
                         Text("상세 사이즈").font(.subheadline)
                     }
@@ -2778,10 +2961,10 @@ struct EditClothingView: View {
                         }
                     }
                     if showDetailSize {
-                        SizeMeasurementRow(label: "어깨단면", value: $sizeShoulder)
-                        SizeMeasurementRow(label: "가슴단면", value: $sizeChest)
-                        SizeMeasurementRow(label: "소매길이", value: $sizeSleeve)
-                        SizeMeasurementRow(label: "총장",    value: $sizeLength)
+                        SizeMeasurementRow(label: "어깨단면", value: $sizeShoulder, focusBinding: $focusedField, field: Field.shoulder)
+                        SizeMeasurementRow(label: "가슴단면", value: $sizeChest,    focusBinding: $focusedField, field: Field.chest)
+                        SizeMeasurementRow(label: "소매길이", value: $sizeSleeve,   focusBinding: $focusedField, field: Field.sleeve)
+                        SizeMeasurementRow(label: "총장",    value: $sizeLength,   focusBinding: $focusedField, field: Field.length)
                     }
                 }
                 Section("구매 정보 (선택)") {
@@ -2792,18 +2975,42 @@ struct EditClothingView: View {
                             .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 130)
+                            .focused($focusedField, equals: .price)
                         Text("원").foregroundStyle(.secondary).font(.subheadline)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { focusedField = .price }
                     TextField("제품 링크", text: $purchasePlace)
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .focused($focusedField, equals: .link)
+                }
+                Section("별점") {
+                    StarRatingPicker(rating: $rating)
+                        .padding(.vertical, 4)
                 }
             }
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 60).allowsHitTesting(false) }
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("옷 수정")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Button(action: editFocusPrevious) {
+                        Image(systemName: "chevron.up")
+                    }
+                    .disabled(editPreviousField == nil)
+                    Button(action: editFocusNext) {
+                        Image(systemName: "chevron.down")
+                    }
+                    .disabled(editNextField == nil)
+                    Spacer()
+                    Button("완료") {
+                        focusedField = nil
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("취소") { dismiss() }
                 }
@@ -2959,6 +3166,23 @@ struct EditClothingView: View {
         }
     }
 
+    private var editOrderedFields: [Field] {
+        var fields: [Field] = [.name, .brand, .sizeLabel]
+        if showDetailSize { fields += [.shoulder, .chest, .sleeve, .length] }
+        fields += [.price, .link]
+        return fields
+    }
+    private var editPreviousField: Field? {
+        guard let cur = focusedField, let idx = editOrderedFields.firstIndex(of: cur), idx > 0 else { return nil }
+        return editOrderedFields[idx - 1]
+    }
+    private var editNextField: Field? {
+        guard let cur = focusedField, let idx = editOrderedFields.firstIndex(of: cur), idx + 1 < editOrderedFields.count else { return nil }
+        return editOrderedFields[idx + 1]
+    }
+    private func editFocusPrevious() { focusedField = editPreviousField }
+    private func editFocusNext()     { focusedField = editNextField }
+
     private func save() {
         Task { @MainActor in
             // 기존 이미지 파일 삭제
@@ -2989,7 +3213,7 @@ struct EditClothingView: View {
                     length: Double(sizeLength)
                 ),
                 alterationHistory: original.alterationHistory,
-                rating: original.rating,
+                rating: rating,
                 review: original.review,
                 wearCount: original.wearCount,
                 purchaseDate: original.purchaseDate,
