@@ -2462,6 +2462,197 @@ struct CameraPickerView: UIViewControllerRepresentable {
     }
 }
 
+// MARK: - Web Image Picker
+
+@MainActor
+private final class ImageSearcher: ObservableObject {
+    @Published var imageURLs: [String] = []
+    @Published var isLoading = false
+    @Published var didSearch = false
+    @Published var fetchFailed = false
+
+    private var task: Task<Void, Never>?
+
+    func search(query: String) {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return }
+        task?.cancel()
+        imageURLs = []
+        fetchFailed = false
+        isLoading = true
+        didSearch = true
+
+        task = Task {
+            let encoded = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
+            guard let url = URL(string: "https://www.google.com/search?q=\(encoded)&tbm=isch&hl=ko") else {
+                self.isLoading = false; return
+            }
+            var req = URLRequest(url: url)
+            req.setValue(
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+                forHTTPHeaderField: "User-Agent"
+            )
+            req.setValue("ko-KR,ko;q=0.9", forHTTPHeaderField: "Accept-Language")
+            do {
+                let (data, _) = try await URLSession.shared.data(for: req)
+                guard !Task.isCancelled else { self.isLoading = false; return }
+                let html = String(data: data, encoding: .utf8) ?? ""
+                let urls = Self.extractThumbnailURLs(from: html)
+                self.imageURLs = urls
+                self.fetchFailed = urls.isEmpty
+            } catch {
+                if !Task.isCancelled { self.fetchFailed = true }
+            }
+            self.isLoading = false
+        }
+    }
+
+    private static func extractThumbnailURLs(from html: String) -> [String] {
+        let unescaped = html
+            .replacingOccurrences(of: "\\u003d", with: "=")
+            .replacingOccurrences(of: "\\u0026", with: "&")
+        guard let regex = try? NSRegularExpression(
+            pattern: #"https://encrypted-tbn\d\.gstatic\.com/images\?q=tbn:[A-Za-z0-9_:&=+%\-]+"#
+        ) else { return [] }
+        let ns = unescaped as NSString
+        var seen = Set<String>()
+        var results: [String] = []
+        for m in regex.matches(in: unescaped, range: NSRange(location: 0, length: ns.length)) {
+            let url = ns.substring(with: m.range)
+            if seen.insert(url).inserted { results.append(url) }
+        }
+        return Array(results.prefix(30))
+    }
+}
+
+struct WebImagePickerView: View {
+    let initialQuery: String
+    let onImagePicked: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var searcher = ImageSearcher()
+    @State private var query = ""
+    @State private var selectedURL: String? = nil
+    @State private var isDownloading = false
+
+    private let columns = [GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3)]
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    TextField("검색어 입력", text: $query)
+                        .textFieldStyle(.roundedBorder)
+                        .submitLabel(.search)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .onSubmit { doSearch() }
+                    Button("검색") { doSearch() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(query.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 10)
+
+                Divider()
+
+                Group {
+                    if searcher.isLoading {
+                        VStack { Spacer(); ProgressView("검색 중…"); Spacer() }
+                    } else if searcher.fetchFailed {
+                        VStack(spacing: 12) {
+                            Spacer()
+                            Image(systemName: "wifi.slash").font(.largeTitle).foregroundStyle(.secondary)
+                            Text("검색 결과를 가져오지 못했어요").foregroundStyle(.secondary)
+                            Button("다시 시도") { doSearch() }
+                            Spacer()
+                        }
+                    } else if searcher.imageURLs.isEmpty && searcher.didSearch {
+                        VStack { Spacer(); Text("검색 결과가 없어요").foregroundStyle(.secondary); Spacer() }
+                    } else {
+                        ScrollView {
+                            LazyVGrid(columns: columns, spacing: 3) {
+                                ForEach(searcher.imageURLs, id: \.self) { url in
+                                    imageCell(url: url)
+                                }
+                            }
+                            .padding(4)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if selectedURL != nil {
+                    Divider()
+                    Button {
+                        confirmSelection()
+                    } label: {
+                        Group {
+                            if isDownloading { ProgressView() }
+                            else { Text("확인").font(.headline) }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .disabled(isDownloading)
+                }
+            }
+            .navigationTitle("인터넷에서 검색")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("취소") { dismiss() }
+                }
+            }
+        }
+        .onAppear {
+            query = initialQuery
+            if !initialQuery.trimmingCharacters(in: .whitespaces).isEmpty { doSearch() }
+        }
+    }
+
+    @ViewBuilder
+    private func imageCell(url: String) -> some View {
+        let isSelected = selectedURL == url
+        AsyncImage(url: URL(string: url)) { phase in
+            switch phase {
+            case .success(let img): img.resizable().scaledToFill()
+            case .failure:         Color(.systemGray5).overlay(Image(systemName: "photo").foregroundStyle(.secondary))
+            default:               Color(.systemGray5).overlay(ProgressView().scaleEffect(0.7))
+            }
+        }
+        .frame(height: 160)
+        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(isSelected ? RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: 3) : nil)
+        .contentShape(Rectangle())
+        .onTapGesture { selectedURL = isSelected ? nil : url }
+    }
+
+    private func doSearch() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        selectedURL = nil
+        searcher.search(query: query)
+    }
+
+    private func confirmSelection() {
+        guard let urlString = selectedURL, let url = URL(string: urlString) else { return }
+        isDownloading = true
+        Task {
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                if let image = UIImage(data: data) {
+                    onImagePicked(image)
+                    dismiss()
+                }
+            } catch {}
+            isDownloading = false
+        }
+    }
+}
+
 // MARK: - Add Clothing
 
 struct AddClothingView: View {
@@ -2494,6 +2685,7 @@ struct AddClothingView: View {
     @State private var showSourcePicker = false
     @State private var showCamera = false
     @State private var showGallery = false
+    @State private var showWebSearch = false
     @State private var galleryItems: [PhotosPickerItem] = []
 
     @State private var pendingImages: [UIImage] = []
@@ -2504,6 +2696,7 @@ struct AddClothingView: View {
     @State private var bgRemoveError: String?
     @State private var editingImageIndex: Int? = nil
     @State private var isFromCamera = false
+    @State private var isFromWeb = false
 
     var body: some View {
         NavigationStack {
@@ -2633,11 +2826,19 @@ struct AddClothingView: View {
                 }
             }
             .confirmationDialog("사진 추가 방법 선택", isPresented: $showSourcePicker) {
-                Button("카메라로 촬영") { isFromCamera = true; showCamera = true }
-                Button("갤러리에서 선택") { isFromCamera = false; showGallery = true }
+                Button("카메라로 촬영")    { isFromCamera = true;  isFromWeb = false; showCamera    = true }
+                Button("갤러리에서 선택") { isFromCamera = false; isFromWeb = false; showGallery   = true }
+                Button("인터넷에서 검색") { isFromCamera = false; isFromWeb = true;  showWebSearch = true }
                 Button("취소", role: .cancel) {}
             }
             .photosPicker(isPresented: $showGallery, selection: $galleryItems, maxSelectionCount: 5 - selectedImages.count, matching: .images)
+            .sheet(isPresented: $showWebSearch) {
+                WebImagePickerView(initialQuery: name) { image in
+                    isFromWeb = true
+                    pendingImages.append(image)
+                    processNextBgIfIdle()
+                }
+            }
             .fullScreenCover(isPresented: $showCamera) {
                 CameraPickerView { image in
                     pendingImages.append(image)
@@ -2652,7 +2853,7 @@ struct AddClothingView: View {
                             isLoading: isRemovingBg,
                             error: bgRemoveError,
                             existingColor: color.isEmpty ? nil : color,
-                            cancelLabel: isFromCamera ? "다시 촬영" : "다시 선택"
+                            cancelLabel: isFromCamera ? "다시 촬영" : isFromWeb ? "다시 검색" : "다시 선택"
                         ) { finalImage, detectedColor, bg in
                             selectedImages.append(finalImage)
                             imageBgOptions.append(bg)
@@ -2660,11 +2861,14 @@ struct AddClothingView: View {
                             finishBgPreview()
                         } onCancel: {
                             let fromCamera = isFromCamera
+                            let fromWeb = isFromWeb
                             pendingImages = []
                             finishBgPreview()
                             Task { @MainActor in
                                 try? await Task.sleep(for: .milliseconds(450))
-                                if fromCamera { showCamera = true } else { showGallery = true }
+                                if fromCamera { showCamera = true }
+                                else if fromWeb { showWebSearch = true }
+                                else { showGallery = true }
                             }
                         } onDismiss: {
                             pendingImages = []
@@ -2889,6 +3093,7 @@ struct EditClothingView: View {
     @State private var showSourcePicker = false
     @State private var showCamera = false
     @State private var showGallery = false
+    @State private var showWebSearch = false
     @State private var galleryItems: [PhotosPickerItem] = []
 
     @State private var pendingImages: [UIImage] = []
@@ -3045,11 +3250,18 @@ struct EditClothingView: View {
                 }
             }
             .confirmationDialog("사진 추가 방법 선택", isPresented: $showSourcePicker) {
-                Button("카메라로 촬영") { showCamera = true }
-                Button("갤러리에서 선택") { showGallery = true }
+                Button("카메라로 촬영")    { showCamera    = true }
+                Button("갤러리에서 선택") { showGallery   = true }
+                Button("인터넷에서 검색") { showWebSearch = true }
                 Button("취소", role: .cancel) {}
             }
             .photosPicker(isPresented: $showGallery, selection: $galleryItems, maxSelectionCount: 5 - selectedImages.count, matching: .images)
+            .sheet(isPresented: $showWebSearch) {
+                WebImagePickerView(initialQuery: name) { image in
+                    pendingImages.append(image)
+                    processNextBgIfIdle()
+                }
+            }
             .fullScreenCover(isPresented: $showCamera) {
                 CameraPickerView { image in
                     pendingImages.append(image)
