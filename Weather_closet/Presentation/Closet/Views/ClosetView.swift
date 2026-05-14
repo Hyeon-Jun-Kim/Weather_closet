@@ -1535,7 +1535,42 @@ struct BgRemovePreviewSheet: View {
                                     // 맨 위 레이어: hitTest로 핸들 터치는 통과, 나머지는 직접 수신
                                     CropGestureView(
                                         onPinchDelta: { delta in
-                                            cropZoomScale = max(1.0, min(4.0, cropZoomScale * delta))
+                                            let base = cropImageFrame(in: geo.size)
+                                            let cx = geo.size.width  / 2
+                                            let cy = geo.size.height / 2
+                                            // 캡처된 imgFrame은 stale — 현재 @State로 직접 계산
+                                            let curF = CGRect(
+                                                x: cx + (base.minX - cx) * cropZoomScale + cropPanOffset.width,
+                                                y: cy + (base.minY - cy) * cropZoomScale + cropPanOffset.height,
+                                                width: base.width  * cropZoomScale,
+                                                height: base.height * cropZoomScale
+                                            )
+                                            guard curF.width > 0, curF.height > 0 else { return }
+                                            let sMinX = curF.minX + cropMinX * curF.width
+                                            let sMinY = curF.minY + cropMinY * curF.height
+                                            let sMaxX = curF.minX + cropMaxX * curF.width
+                                            let sMaxY = curF.minY + cropMaxY * curF.height
+
+                                            let newScale = max(1.0, min(4.0, cropZoomScale * delta))
+                                            cropZoomScale = newScale
+                                            let nf = CGRect(
+                                                x: cx + (base.minX - cx) * newScale + cropPanOffset.width,
+                                                y: cy + (base.minY - cy) * newScale + cropPanOffset.height,
+                                                width: base.width  * newScale,
+                                                height: base.height * newScale
+                                            )
+                                            guard nf.width > 0, nf.height > 0 else { return }
+                                            var nMinX = (sMinX - nf.minX) / nf.width
+                                            var nMinY = (sMinY - nf.minY) / nf.height
+                                            var nMaxX = (sMaxX - nf.minX) / nf.width
+                                            var nMaxY = (sMaxY - nf.minY) / nf.height
+                                            let (visMinX, visMaxX, visMinY, visMaxY) = visibleCropBounds(imageFrame: nf, viewSize: geo.size)
+                                            nMinX = max(nMinX, visMinX); nMaxX = min(nMaxX, visMaxX)
+                                            nMinY = max(nMinY, visMinY); nMaxY = min(nMaxY, visMaxY)
+                                            if nMaxX > nMinX && nMaxY > nMinY {
+                                                cropMinX = nMinX; cropMaxX = nMaxX
+                                                cropMinY = nMinY; cropMaxY = nMaxY
+                                            }
                                         },
                                         onPanDelta: { delta in
                                             guard imgFrame.width > 0, imgFrame.height > 0 else { return }
@@ -1551,10 +1586,44 @@ struct BgRemovePreviewSheet: View {
                                         },
                                         onTwoFingerPanDelta: { delta in
                                             let base = cropImageFrame(in: geo.size)
+                                            let cx = geo.size.width  / 2
+                                            let cy = geo.size.height / 2
+                                            // 캡처된 imgFrame은 stale — 현재 @State로 직접 계산
+                                            let curF = CGRect(
+                                                x: cx + (base.minX - cx) * cropZoomScale + cropPanOffset.width,
+                                                y: cy + (base.minY - cy) * cropZoomScale + cropPanOffset.height,
+                                                width: base.width  * cropZoomScale,
+                                                height: base.height * cropZoomScale
+                                            )
+                                            guard curF.width > 0, curF.height > 0 else { return }
+                                            let sMinX = curF.minX + cropMinX * curF.width
+                                            let sMinY = curF.minY + cropMinY * curF.height
+                                            let sMaxX = curF.minX + cropMaxX * curF.width
+                                            let sMaxY = curF.minY + cropMaxY * curF.height
+
                                             let maxDx = base.width  * (cropZoomScale - 1) / 2
                                             let maxDy = base.height * (cropZoomScale - 1) / 2
-                                            cropPanOffset.width  = max(-maxDx, min(maxDx, cropPanOffset.width  + delta.width))
-                                            cropPanOffset.height = max(-maxDy, min(maxDy, cropPanOffset.height + delta.height))
+                                            let newW = max(-maxDx, min(maxDx, cropPanOffset.width  + delta.width))
+                                            let newH = max(-maxDy, min(maxDy, cropPanOffset.height + delta.height))
+                                            cropPanOffset = CGSize(width: newW, height: newH)
+                                            let nf = CGRect(
+                                                x: cx + (base.minX - cx) * cropZoomScale + newW,
+                                                y: cy + (base.minY - cy) * cropZoomScale + newH,
+                                                width: base.width  * cropZoomScale,
+                                                height: base.height * cropZoomScale
+                                            )
+                                            guard nf.width > 0, nf.height > 0 else { return }
+                                            var nMinX = (sMinX - nf.minX) / nf.width
+                                            var nMinY = (sMinY - nf.minY) / nf.height
+                                            var nMaxX = (sMaxX - nf.minX) / nf.width
+                                            var nMaxY = (sMaxY - nf.minY) / nf.height
+                                            let (visMinX, visMaxX, visMinY, visMaxY) = visibleCropBounds(imageFrame: nf, viewSize: geo.size)
+                                            nMinX = max(nMinX, visMinX); nMaxX = min(nMaxX, visMaxX)
+                                            nMinY = max(nMinY, visMinY); nMaxY = min(nMaxY, visMaxY)
+                                            if nMaxX > nMinX && nMaxY > nMinY {
+                                                cropMinX = nMinX; cropMaxX = nMaxX
+                                                cropMinY = nMinY; cropMaxY = nMaxY
+                                            }
                                         },
                                         handlePositions: [
                                             CGPoint(x: cropRect.minX, y: cropRect.minY),
