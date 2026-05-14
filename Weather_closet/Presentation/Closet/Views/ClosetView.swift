@@ -989,6 +989,18 @@ private struct CropGestureView: UIViewRepresentable {
     }
 }
 
+// fullScreenCover의 UIHostingController 배경을 투명하게 만들어 반투명 팝업 효과 구현
+private struct TransparentBackground: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        DispatchQueue.main.async {
+            view.superview?.superview?.backgroundColor = .clear
+        }
+        return view
+    }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+}
+
 struct ImageColorPickerSheet: View {
     let images: [UIImage]
     let onSelect: (String) -> Void
@@ -1022,7 +1034,8 @@ struct ImageColorPickerSheet: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.7)
+            TransparentBackground().ignoresSafeArea()
+            Color.black.opacity(0.5)
                 .ignoresSafeArea()
                 .onTapGesture { colorNameFocused = false; dismiss() }
 
@@ -1354,6 +1367,7 @@ struct BgRemovePreviewSheet: View {
     var cancelLabel: String = "다시 선택"
     let onAccept: (UIImage, String?, PhotoBgOption) -> Void
     let onCancel: () -> Void
+    var onDismiss: (() -> Void)? = nil  // X버튼·배경탭 전용 (nil이면 onCancel로 폴백)
 
     @State private var selectedBg: PhotoBgOption = .transparent
     @State private var colorSuggestions: [ColorSuggestion] = []
@@ -1397,9 +1411,10 @@ struct BgRemovePreviewSheet: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.7)
+            TransparentBackground().ignoresSafeArea()
+            Color.black.opacity(0.5)
                 .ignoresSafeArea()
-                .onTapGesture { if !isLoading { onCancel() } }
+                .onTapGesture { if !isLoading { (onDismiss ?? onCancel)() } }
 
             GeometryReader { geo in
                 let w = max(0, geo.size.width - 40)
@@ -1477,7 +1492,7 @@ struct BgRemovePreviewSheet: View {
             if !isLoading {
                 HStack {
                     Spacer()
-                    Button { onCancel() } label: {
+                    Button { (onDismiss ?? onCancel)() } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Color(.label))
@@ -2496,6 +2511,9 @@ struct AddClothingView: View {
                                 try? await Task.sleep(for: .milliseconds(450))
                                 if fromCamera { showCamera = true } else { showGallery = true }
                             }
+                        } onDismiss: {
+                            pendingImages = []
+                            finishBgPreview()
                         }
                         .toolbar(.hidden, for: .navigationBar)
                     }
