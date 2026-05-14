@@ -2586,22 +2586,9 @@ struct WebImagePickerView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                if selectedURL != nil {
+                if isDownloading {
                     Divider()
-                    Button {
-                        confirmSelection()
-                    } label: {
-                        Group {
-                            if isDownloading { ProgressView() }
-                            else { Text("확인").font(.headline) }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .disabled(isDownloading)
+                    ProgressView("다운로드 중…").padding(.vertical, 12)
                 }
             }
             .navigationTitle("인터넷에서 검색")
@@ -2630,10 +2617,18 @@ struct WebImagePickerView: View {
         }
         .frame(width: size, height: size)
         .clipped()
+        .overlay {
+            if isSelected {
+                Color.black.opacity(0.45)
+                    .overlay(Text("선택").font(.headline).foregroundStyle(.white))
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(isSelected ? RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: 3) : nil)
         .contentShape(Rectangle())
-        .onTapGesture { selectedURL = isSelected ? nil : url }
+        .onTapGesture {
+            if isSelected { confirmSelection() }
+            else { selectedURL = url }
+        }
     }
 
     private func doSearch() {
