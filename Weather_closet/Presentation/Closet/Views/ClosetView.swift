@@ -2534,7 +2534,7 @@ struct WebImagePickerView: View {
     @State private var selectedURL: String? = nil
     @State private var isDownloading = false
 
-    private let columns = [GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3)]
+    private let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
 
     var body: some View {
         NavigationStack {
@@ -2569,13 +2569,18 @@ struct WebImagePickerView: View {
                     } else if searcher.imageURLs.isEmpty && searcher.didSearch {
                         VStack { Spacer(); Text("검색 결과가 없어요").foregroundStyle(.secondary); Spacer() }
                     } else {
-                        ScrollView {
-                            LazyVGrid(columns: columns, spacing: 3) {
-                                ForEach(searcher.imageURLs, id: \.self) { url in
-                                    imageCell(url: url)
+                        GeometryReader { geo in
+                            let spacing: CGFloat = 8
+                            let padding: CGFloat = 8
+                            let cellSize = (geo.size.width - spacing - padding * 2) / 2
+                            ScrollView {
+                                LazyVGrid(columns: columns, spacing: spacing) {
+                                    ForEach(searcher.imageURLs, id: \.self) { url in
+                                        imageCell(url: url, size: cellSize)
+                                    }
                                 }
+                                .padding(padding)
                             }
-                            .padding(4)
                         }
                     }
                 }
@@ -2614,7 +2619,7 @@ struct WebImagePickerView: View {
     }
 
     @ViewBuilder
-    private func imageCell(url: String) -> some View {
+    private func imageCell(url: String, size: CGFloat) -> some View {
         let isSelected = selectedURL == url
         AsyncImage(url: URL(string: url)) { phase in
             switch phase {
@@ -2623,7 +2628,7 @@ struct WebImagePickerView: View {
             default:               Color(.systemGray5).overlay(ProgressView().scaleEffect(0.7))
             }
         }
-        .frame(height: 160)
+        .frame(width: size, height: size)
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .overlay(isSelected ? RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: 3) : nil)
