@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import WebKit
+import RxSwift
 
 enum ClosetMainTab: Hashable, CaseIterable {
     case closet, wishlist, outfit
@@ -2465,153 +2466,205 @@ struct CameraPickerView: UIViewControllerRepresentable {
 
 // MARK: - Web Image Picker
 
+// MARK: - ImageSearcher
+
 @MainActor
 private final class ImageSearcher: ObservableObject {
     @Published var imageURLs: [String] = []
     @Published var isLoading = false
+    @Published var isLoadingMore = false
     @Published var didSearch = false
     @Published var fetchFailed = false
+    @Published var hasMore = false
 
     private var loader: WebViewLoader?
-    private var searchTask: Task<Void, Never>?
+    private var disposeBag = DisposeBag()
+    private var loadMoreDisposeBag = DisposeBag()
+    private var seenURLs = Set<String>()
+    // loadMore 스크롤 후 새 배치 도착 여부를 loadMore() 호출자에게 전달
+    private let loadMoreResult = PublishSubject<Bool>()
 
     func search(query: String) {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return }
-        searchTask?.cancel()
+
         loader?.cancel()
         loader = nil
+        disposeBag = DisposeBag()
+        loadMoreDisposeBag = DisposeBag()
         imageURLs = []
+        seenURLs.removeAll()
         fetchFailed = false
+        hasMore = false
         isLoading = true
+        isLoadingMore = false
         didSearch = true
 
-        searchTask = Task {
-            let encoded = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
-            guard let url = URL(string: "https://www.google.com/search?q=\(encoded)&tbm=isch&hl=ko") else {
-                self.isLoading = false; return
-            }
-            let l = WebViewLoader()
-            self.loader = l
-            var seen = Set<String>()
-            // 결과가 도착하는 즉시 UI에 반영 (1차: ~1.5초, 2차: ~4초)
-            for await batch in l.stream(url: url) {
-                guard !Task.isCancelled else { break }
-                let remaining = 30 - self.imageURLs.count
-                guard remaining > 0 else { break }
-                let fresh = batch.filter { seen.insert($0).inserted }.prefix(remaining)
-                if !fresh.isEmpty { self.imageURLs.append(contentsOf: fresh) }
-            }
-            guard !Task.isCancelled else { self.isLoading = false; return }
-            self.fetchFailed = self.imageURLs.isEmpty
-            self.isLoading = false
-            self.loader = nil
+        let encoded = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
+        guard let url = URL(string: "https://www.google.com/search?q=\(encoded)&tbm=isch&hl=ko") else {
+            isLoading = false; return
         }
+
+        let l = WebViewLoader()
+        loader = l
+
+        l.stream(url: url)
+            .observe(on: MainScheduler.instance)
+            .subscribe(
+                onNext: { [weak self] batch in
+                    guard let self else { return }
+                    let fresh = batch.filter { self.seenURLs.insert($0).inserted }
+                    if !fresh.isEmpty {
+                        let toAdd = self.isLoadingMore ? Array(fresh) : Array(fresh.prefix(max(0, 30 - self.imageURLs.count)))
+                        if !toAdd.isEmpty {
+                            self.imageURLs.append(contentsOf: toAdd)
+                            self.isLoading = false
+                            self.hasMore = true
+                        }
+                    }
+                    // loadMore 스크롤 후 첫 배치가 도착하면 결과 전달
+                    if self.isLoadingMore {
+                        self.loadMoreResult.onNext(!fresh.isEmpty)
+                    }
+                },
+                onError: { [weak self] _ in
+                    guard let self else { return }
+                    if self.imageURLs.isEmpty { self.fetchFailed = true }
+                    self.isLoading = false
+                    self.isLoadingMore = false
+                    self.hasMore = false
+                },
+                onCompleted: { [weak self] in
+                    guard let self else { return }
+                    if self.imageURLs.isEmpty { self.fetchFailed = true }
+                    self.isLoading = false
+                }
+            )
+            .disposed(by: disposeBag)
+    }
+
+    func loadMore() {
+        guard !isLoadingMore, hasMore, let loader = loader else { return }
+        isLoadingMore = true
+        loadMoreDisposeBag = DisposeBag()
+
+        // MutationObserver가 다음 배치를 보내면 결과 수신
+        loadMoreResult
+            .take(1)
+            .observe(on: MainScheduler.instance)
+            .subscribe(onNext: { [weak self] hasNewImages in
+                guard let self else { return }
+                self.hasMore = hasNewImages
+                self.isLoadingMore = false
+            })
+            .disposed(by: loadMoreDisposeBag)
+
+        loader.scroll()
     }
 }
 
-// Google은 JavaScript 실행을 요구하므로 WKWebView로 페이지를 렌더링한 뒤 이미지 URL을 스트리밍 추출
-private final class WebViewLoader: NSObject, WKNavigationDelegate, @unchecked Sendable {
-    private var webView: WKWebView?
-    private var streamContinuation: AsyncStream<[String]>.Continuation?
-    private var workItems: [DispatchWorkItem] = []
-    private var done = false
+// MARK: - WebViewLoader
 
-    func stream(url: URL) -> AsyncStream<[String]> {
-        AsyncStream { [weak self] cont in
-            guard let self else { cont.finish(); return }
-            self.streamContinuation = cont
-            cont.onTermination = { [weak self] _ in
-                DispatchQueue.main.async { self?.teardown() }
-            }
-            let wv = WKWebView(frame: CGRect(x: -2000, y: 0, width: 390, height: 844))
-            wv.navigationDelegate = self
-            self.webView = wv
-            if let window = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene }).first?
-                .windows.first(where: { $0.isKeyWindow }) {
-                window.addSubview(wv)
-            }
-            wv.load(URLRequest(url: url))
-        }
+// Google은 JS 실행이 필요 → WKWebView 사용
+// MutationObserver로 DOM 변경을 감지해 고정 딜레이 없이 반응적으로 URL 방출
+private final class WebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessageHandler, @unchecked Sendable {
+    private var webView: WKWebView?
+    private let subject = PublishSubject<[String]>()
+
+    // Observable<[String]>: MutationObserver → Swift subject → throttle → 구독자
+    func stream(url: URL) -> Observable<[String]> {
+        let wv = makeWebView()
+        webView = wv
+        wv.load(URLRequest(url: url))
+
+        return subject
+            .asObservable()
+            .throttle(.milliseconds(500), latest: true, scheduler: MainScheduler.instance)
     }
 
-    func cancel() { teardown() }
+    // loadMore: 스크롤만 수행 — MutationObserver가 새 이미지를 감지해 subject로 방출
+    func scroll() {
+        webView?.evaluateJavaScript("window.scrollTo(0, document.body.scrollHeight)") { _, _ in }
+    }
 
-    private func teardown() {
-        guard !done else { return }
-        done = true
-        workItems.forEach { $0.cancel() }
-        workItems.removeAll()
+    func cancel() {
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "imageURLs")
         webView?.stopLoading()
         webView?.removeFromSuperview()
         webView = nil
-        streamContinuation?.finish()
-        streamContinuation = nil
+        subject.onCompleted()
     }
 
+    private func makeWebView() -> WKWebView {
+        let controller = WKUserContentController()
+        controller.add(self, name: "imageURLs")
+
+        // JS MutationObserver: DOM 변경 감지 즉시 URL 추출 후 Swift로 전달
+        // JS 자체 스로틀(300ms)로 innerHTML 스캔 빈도를 제한
+        let js = """
+        (function() {
+            var lastPost = 0;
+            function extractAndPost() {
+                var now = Date.now();
+                if (now - lastPost < 300) return;
+                lastPost = now;
+                var re = /https:\\/\\/encrypted-tbn\\d*\\.gstatic\\.com\\/images\\?q=[A-Za-z0-9_:&=+%\\-]+/g;
+                var html = document.documentElement.innerHTML;
+                var m, results = [];
+                while ((m = re.exec(html)) !== null) {
+                    results.push(m[0]);
+                    if (results.length >= 100) break;
+                }
+                if (results.length > 0)
+                    window.webkit.messageHandlers.imageURLs.postMessage(results.join('|||'));
+            }
+            var obs = new MutationObserver(extractAndPost);
+            obs.observe(document.documentElement, { childList: true, subtree: true });
+        })();
+        """
+        let script = WKUserScript(source: js, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        controller.addUserScript(script)
+
+        let config = WKWebViewConfiguration()
+        config.userContentController = controller
+
+        let wv = WKWebView(frame: CGRect(x: -2000, y: 0, width: 390, height: 844), configuration: config)
+        wv.navigationDelegate = self
+
+        if let window = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene }).first?
+            .windows.first(where: { $0.isKeyWindow }) {
+            window.addSubview(wv)
+        }
+        return wv
+    }
+
+    // MARK: - WKNavigationDelegate
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        let currentURL = webView.url?.absoluteString ?? ""
-        guard !done, !currentURL.contains("enablejs") else { return }
-        scheduleExtractions(webView: webView)
+        let url = webView.url?.absoluteString ?? ""
+        // enablejs 리다이렉트는 무시 — WKWebView가 JS를 실행하면 자동으로 통과됨
+        guard !url.contains("enablejs") else { return }
+        // MutationObserver가 이후 모든 DOM 변경을 반응적으로 처리
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         Log.e("ImgSearch", "로드 실패: \(error.localizedDescription)")
-        teardown()
+        subject.onCompleted()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         Log.e("ImgSearch", "프로비저널 실패: \(error.localizedDescription)")
-        teardown()
+        subject.onCompleted()
     }
 
-    private func scheduleExtractions(webView: WKWebView) {
-        // 1차: 1.5초 후 초기 뷰포트 이미지
-        schedule(delay: 1.5) { [weak self] in
-            self?.extract(webView: webView, isFinal: false)
-        }
-        // 스크롤 트리거: 2.5초
-        schedule(delay: 2.5) { [weak self] in
-            guard let self, !self.done else { return }
-            webView.evaluateJavaScript("window.scrollTo(0, document.body.scrollHeight)") { _, _ in }
-        }
-        // 2차 (최종): 4초 후 innerHTML 전체 재추출
-        schedule(delay: 4.0) { [weak self] in
-            self?.extract(webView: webView, isFinal: true)
-        }
-    }
+    // MARK: - WKScriptMessageHandler
 
-    private func schedule(delay: Double, block: @escaping () -> Void) {
-        let item = DispatchWorkItem(block: block)
-        workItems.append(item)
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
-    }
-
-    private func extract(webView: WKWebView, isFinal: Bool) {
-        guard !done else { return }
-        let js = """
-        (function() {
-            var html = document.documentElement.innerHTML;
-            var re = /https:\\/\\/encrypted-tbn\\d*\\.gstatic\\.com\\/images\\?q=[A-Za-z0-9_:&=+%\\-]+/g;
-            var results = [], m;
-            while ((m = re.exec(html)) !== null) {
-                results.push(m[0]);
-                if (results.length >= 50) break;
-            }
-            return results.join('|||');
-        })()
-        """
-        webView.evaluateJavaScript(js) { [weak self] result, _ in
-            guard let self, !self.done else { return }
-            var urls: [String] = []
-            if let str = result as? String, !str.isEmpty {
-                urls = str.components(separatedBy: "|||").filter { !$0.isEmpty }
-            }
-            Log.d("ImgSearch", "\(isFinal ? "2차(최종)" : "1차") 추출: \(urls.count)개")
-            if !urls.isEmpty { self.streamContinuation?.yield(urls) }
-            if isFinal { self.teardown() }
-        }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "imageURLs", let body = message.body as? String else { return }
+        let urls = body.components(separatedBy: "|||").filter { !$0.isEmpty }
+        Log.d("ImgSearch", "MutationObserver 감지: \(urls.count)개")
+        subject.onNext(urls)
     }
 }
 
@@ -2671,13 +2724,30 @@ struct WebImagePickerView: View {
                             let cellSize = (geo.size.width - spacing - padding * 2) / 2
                             ScrollView {
                                 LazyVGrid(columns: columns, spacing: spacing) {
-                                    ForEach(searcher.imageURLs, id: \.self) { url in
+                                    ForEach(Array(searcher.imageURLs.enumerated()), id: \.element) { index, url in
                                         imageCell(url: url, size: cellSize)
+                                            .onAppear {
+                                                // LazyVGrid 안에서만 실제 화면 진입 시 onAppear 발동
+                                                if index == searcher.imageURLs.count - 1,
+                                                   searcher.hasMore, !searcher.isLoadingMore {
+                                                    searcher.loadMore()
+                                                }
+                                            }
                                     }
                                 }
                                 .padding(padding)
                                 if searcher.isLoading {
                                     ProgressView().padding(.vertical, 16)
+                                } else if searcher.isLoadingMore {
+                                    ProgressView("더 불러오는 중…")
+                                        .font(.caption)
+                                        .padding(.vertical, 16)
+                                } else if searcher.hasMore {
+                                    Label("당겨서 더 불러오기", systemImage: "arrow.up.circle")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.vertical, 16)
+                                        .frame(maxWidth: .infinity)
                                 }
                             }
                         }

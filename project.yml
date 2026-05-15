@@ -23,6 +23,9 @@ packages:
   LookinServer:
     url: https://github.com/QMUI/LookinServer
     from: 1.2.8
+  RxSwift:
+    url: https://github.com/ReactiveX/RxSwift
+    from: 6.7.0
 
 targets:
   Weather_closet:
@@ -38,6 +41,8 @@ targets:
     dependencies:
       - package: LookinServer
         product: LookinServer
+      - package: RxSwift
+        product: RxSwift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hyeonjunkim.Weather-closet

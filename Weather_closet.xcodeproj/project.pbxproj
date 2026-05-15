@@ -31,6 +31,7 @@
 		54CA8F0B6C548BC9598DEB84 /* GetCalendarEventsUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = E13FA4C2BCD572B5F2CB6ED6 /* GetCalendarEventsUseCase.swift */; };
 		59BDA9C9AE3938BEBCB27EDF /* UserModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B501D127B4E959BFB140FE9A /* UserModel.swift */; };
 		6A55CB0C163DC3F00989EDDC /* UserLocalDataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A45369FA2A25E23608706EC /* UserLocalDataSource.swift */; };
+		6B4B51E5E2E46FD8E8A62EA0 /* RxSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 8DE85877088C9D37BF9A04BE /* RxSwift */; };
 		6BFEAF6EF1C43B9E282F044D /* ClothingEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4514DEC502A8E49BD290EE8 /* ClothingEntity.swift */; };
 		749F93FB338F82BB6499BE93 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 198C74717E5CCF91EF13F774 /* APIClient.swift */; };
 		76665A6A0B6E7D92956C178F /* Weather_closetUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B437B29208133B10FAF93AF /* Weather_closetUITests.swift */; };
@@ -150,6 +151,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EAD9F86DF49D840F7A4D7A6F /* LookinServer in Frameworks */,
+				6B4B51E5E2E46FD8E8A62EA0 /* RxSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -641,6 +643,7 @@
 			name = Weather_closet;
 			packageProductDependencies = (
 				9C2F52AD0FC82CA211620363 /* LookinServer */,
+				8DE85877088C9D37BF9A04BE /* RxSwift */,
 			);
 			productName = Weather_closet;
 			productReference = 34105142B99F16A45D744329 /* Weather_closet.app */;
@@ -699,6 +702,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				442CC3D09F8685F9D309CA5D /* XCRemoteSwiftPackageReference "LookinServer" */,
+				5DADDFFA7819EA3C852BBF47 /* XCRemoteSwiftPackageReference "RxSwift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 84BC75F7DE5BCC42BF9509CD /* Products */;
@@ -1101,9 +1105,22 @@
 				minimumVersion = 1.2.8;
 			};
 		};
+		5DADDFFA7819EA3C852BBF47 /* XCRemoteSwiftPackageReference "RxSwift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ReactiveX/RxSwift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.7.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		8DE85877088C9D37BF9A04BE /* RxSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5DADDFFA7819EA3C852BBF47 /* XCRemoteSwiftPackageReference "RxSwift" */;
+			productName = RxSwift;
+		};
 		9C2F52AD0FC82CA211620363 /* LookinServer */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 442CC3D09F8685F9D309CA5D /* XCRemoteSwiftPackageReference "LookinServer" */;
