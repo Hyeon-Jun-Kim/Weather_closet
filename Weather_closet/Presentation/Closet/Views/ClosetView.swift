@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import WebKit
 
 enum ClosetMainTab: Hashable, CaseIterable {
     case closet, wishlist, outfit
@@ -2471,57 +2472,146 @@ private final class ImageSearcher: ObservableObject {
     @Published var didSearch = false
     @Published var fetchFailed = false
 
-    private var task: Task<Void, Never>?
+    private var loader: WebViewLoader?
+    private var searchTask: Task<Void, Never>?
 
     func search(query: String) {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return }
-        task?.cancel()
+        searchTask?.cancel()
+        loader?.cancel()
+        loader = nil
         imageURLs = []
         fetchFailed = false
         isLoading = true
         didSearch = true
 
-        task = Task {
+        searchTask = Task {
             let encoded = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
             guard let url = URL(string: "https://www.google.com/search?q=\(encoded)&tbm=isch&hl=ko") else {
                 self.isLoading = false; return
             }
-            var req = URLRequest(url: url)
-            req.setValue(
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
-                forHTTPHeaderField: "User-Agent"
-            )
-            req.setValue("ko-KR,ko;q=0.9", forHTTPHeaderField: "Accept-Language")
-            do {
-                let (data, _) = try await URLSession.shared.data(for: req)
-                guard !Task.isCancelled else { self.isLoading = false; return }
-                let html = String(data: data, encoding: .utf8) ?? ""
-                let urls = Self.extractThumbnailURLs(from: html)
-                self.imageURLs = urls
-                self.fetchFailed = urls.isEmpty
-            } catch {
-                if !Task.isCancelled { self.fetchFailed = true }
+            let l = WebViewLoader()
+            self.loader = l
+            var seen = Set<String>()
+            // 결과가 도착하는 즉시 UI에 반영 (1차: ~1.5초, 2차: ~4초)
+            for await batch in l.stream(url: url) {
+                guard !Task.isCancelled else { break }
+                let remaining = 30 - self.imageURLs.count
+                guard remaining > 0 else { break }
+                let fresh = batch.filter { seen.insert($0).inserted }.prefix(remaining)
+                if !fresh.isEmpty { self.imageURLs.append(contentsOf: fresh) }
             }
+            guard !Task.isCancelled else { self.isLoading = false; return }
+            self.fetchFailed = self.imageURLs.isEmpty
             self.isLoading = false
+            self.loader = nil
+        }
+    }
+}
+
+// Google은 JavaScript 실행을 요구하므로 WKWebView로 페이지를 렌더링한 뒤 이미지 URL을 스트리밍 추출
+private final class WebViewLoader: NSObject, WKNavigationDelegate, @unchecked Sendable {
+    private var webView: WKWebView?
+    private var streamContinuation: AsyncStream<[String]>.Continuation?
+    private var workItems: [DispatchWorkItem] = []
+    private var done = false
+
+    func stream(url: URL) -> AsyncStream<[String]> {
+        AsyncStream { [weak self] cont in
+            guard let self else { cont.finish(); return }
+            self.streamContinuation = cont
+            cont.onTermination = { [weak self] _ in
+                DispatchQueue.main.async { self?.teardown() }
+            }
+            let wv = WKWebView(frame: CGRect(x: -2000, y: 0, width: 390, height: 844))
+            wv.navigationDelegate = self
+            self.webView = wv
+            if let window = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene }).first?
+                .windows.first(where: { $0.isKeyWindow }) {
+                window.addSubview(wv)
+            }
+            wv.load(URLRequest(url: url))
         }
     }
 
-    private static func extractThumbnailURLs(from html: String) -> [String] {
-        let unescaped = html
-            .replacingOccurrences(of: "\\u003d", with: "=")
-            .replacingOccurrences(of: "\\u0026", with: "&")
-        guard let regex = try? NSRegularExpression(
-            pattern: #"https://encrypted-tbn\d\.gstatic\.com/images\?q=tbn:[A-Za-z0-9_:&=+%\-]+"#
-        ) else { return [] }
-        let ns = unescaped as NSString
-        var seen = Set<String>()
-        var results: [String] = []
-        for m in regex.matches(in: unescaped, range: NSRange(location: 0, length: ns.length)) {
-            let url = ns.substring(with: m.range)
-            if seen.insert(url).inserted { results.append(url) }
+    func cancel() { teardown() }
+
+    private func teardown() {
+        guard !done else { return }
+        done = true
+        workItems.forEach { $0.cancel() }
+        workItems.removeAll()
+        webView?.stopLoading()
+        webView?.removeFromSuperview()
+        webView = nil
+        streamContinuation?.finish()
+        streamContinuation = nil
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        let currentURL = webView.url?.absoluteString ?? ""
+        guard !done, !currentURL.contains("enablejs") else { return }
+        scheduleExtractions(webView: webView)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        Log.e("ImgSearch", "로드 실패: \(error.localizedDescription)")
+        teardown()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        Log.e("ImgSearch", "프로비저널 실패: \(error.localizedDescription)")
+        teardown()
+    }
+
+    private func scheduleExtractions(webView: WKWebView) {
+        // 1차: 1.5초 후 초기 뷰포트 이미지
+        schedule(delay: 1.5) { [weak self] in
+            self?.extract(webView: webView, isFinal: false)
         }
-        return Array(results.prefix(30))
+        // 스크롤 트리거: 2.5초
+        schedule(delay: 2.5) { [weak self] in
+            guard let self, !self.done else { return }
+            webView.evaluateJavaScript("window.scrollTo(0, document.body.scrollHeight)") { _, _ in }
+        }
+        // 2차 (최종): 4초 후 innerHTML 전체 재추출
+        schedule(delay: 4.0) { [weak self] in
+            self?.extract(webView: webView, isFinal: true)
+        }
+    }
+
+    private func schedule(delay: Double, block: @escaping () -> Void) {
+        let item = DispatchWorkItem(block: block)
+        workItems.append(item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    private func extract(webView: WKWebView, isFinal: Bool) {
+        guard !done else { return }
+        let js = """
+        (function() {
+            var html = document.documentElement.innerHTML;
+            var re = /https:\\/\\/encrypted-tbn\\d*\\.gstatic\\.com\\/images\\?q=[A-Za-z0-9_:&=+%\\-]+/g;
+            var results = [], m;
+            while ((m = re.exec(html)) !== null) {
+                results.push(m[0]);
+                if (results.length >= 50) break;
+            }
+            return results.join('|||');
+        })()
+        """
+        webView.evaluateJavaScript(js) { [weak self] result, _ in
+            guard let self, !self.done else { return }
+            var urls: [String] = []
+            if let str = result as? String, !str.isEmpty {
+                urls = str.components(separatedBy: "|||").filter { !$0.isEmpty }
+            }
+            Log.d("ImgSearch", "\(isFinal ? "2차(최종)" : "1차") 추출: \(urls.count)개")
+            if !urls.isEmpty { self.streamContinuation?.yield(urls) }
+            if isFinal { self.teardown() }
+        }
     }
 }
 
@@ -2556,7 +2646,7 @@ struct WebImagePickerView: View {
                 Divider()
 
                 Group {
-                    if searcher.isLoading {
+                    if searcher.isLoading && searcher.imageURLs.isEmpty {
                         VStack { Spacer(); ProgressView("검색 중…"); Spacer() }
                     } else if searcher.fetchFailed {
                         VStack(spacing: 12) {
@@ -2580,6 +2670,9 @@ struct WebImagePickerView: View {
                                     }
                                 }
                                 .padding(padding)
+                                if searcher.isLoading {
+                                    ProgressView().padding(.vertical, 16)
+                                }
                             }
                         }
                     }
