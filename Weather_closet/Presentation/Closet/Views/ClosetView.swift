@@ -2616,13 +2616,19 @@ private final class WebViewLoader: NSObject, WKNavigationDelegate, @unchecked Se
 }
 
 struct WebImagePickerView: View {
+    @Binding var isPresented: Bool
     let initialQuery: String
-    let onImagePicked: (UIImage) -> Void
-    @Environment(\.dismiss) private var dismiss
+    let onImagePicked: (UIImage, String?, PhotoBgOption) -> Void
+
     @StateObject private var searcher = ImageSearcher()
     @State private var query = ""
     @State private var selectedURL: String? = nil
     @State private var isDownloading = false
+    @State private var downloadedImage: UIImage? = nil
+    @State private var removedBgImage: UIImage? = nil
+    @State private var isRemovingBg = false
+    @State private var bgRemoveError: String? = nil
+    @State private var showBgPreview = false
 
     private let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
 
@@ -2688,7 +2694,30 @@ struct WebImagePickerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("취소") { dismiss() }
+                    Button("취소") { isPresented = false }
+                }
+            }
+            // sheet 위에 sheet를 올리지 않고 같은 NavigationStack 안에서 push
+            .navigationDestination(isPresented: $showBgPreview) {
+                if let current = downloadedImage {
+                    BgRemovePreviewSheet(
+                        original: current,
+                        removedBg: removedBgImage,
+                        isLoading: isRemovingBg,
+                        error: bgRemoveError,
+                        existingColor: nil,
+                        cancelLabel: "다시 검색"
+                    ) { finalImage, detectedColor, bg in
+                        onImagePicked(finalImage, detectedColor, bg)
+                        isPresented = false
+                    } onCancel: {
+                        showBgPreview = false
+                        downloadedImage = nil
+                        removedBgImage = nil
+                        bgRemoveError = nil
+                        selectedURL = nil
+                    }
+                    .toolbar(.hidden, for: .navigationBar)
                 }
             }
         }
@@ -2736,12 +2765,26 @@ struct WebImagePickerView: View {
         Task {
             do {
                 let (data, _) = try await URLSession.shared.data(from: url)
-                if let image = UIImage(data: data) {
-                    onImagePicked(image)
-                    dismiss()
+                guard let image = UIImage(data: data) else {
+                    await MainActor.run { isDownloading = false }; return
                 }
-            } catch {}
-            isDownloading = false
+                await MainActor.run {
+                    downloadedImage = image
+                    isRemovingBg = true
+                    bgRemoveError = nil
+                    removedBgImage = nil
+                    isDownloading = false
+                    showBgPreview = true
+                }
+                do {
+                    let removed = try await RemoveBgService.shared.removeBackground(from: image)
+                    await MainActor.run { removedBgImage = removed; isRemovingBg = false }
+                } catch {
+                    await MainActor.run { bgRemoveError = error.localizedDescription; isRemovingBg = false }
+                }
+            } catch {
+                await MainActor.run { isDownloading = false }
+            }
         }
     }
 }
@@ -2926,10 +2969,10 @@ struct AddClothingView: View {
             }
             .photosPicker(isPresented: $showGallery, selection: $galleryItems, maxSelectionCount: 5 - selectedImages.count, matching: .images)
             .sheet(isPresented: $showWebSearch) {
-                WebImagePickerView(initialQuery: name) { image in
-                    isFromWeb = true
-                    pendingImages.append(image)
-                    processNextBgIfIdle()
+                WebImagePickerView(isPresented: $showWebSearch, initialQuery: name) { finalImage, detectedColor, bg in
+                    selectedImages.append(finalImage)
+                    imageBgOptions.append(bg)
+                    if let c = detectedColor { color = c }
                 }
             }
             .fullScreenCover(isPresented: $showCamera) {
@@ -3350,9 +3393,9 @@ struct EditClothingView: View {
             }
             .photosPicker(isPresented: $showGallery, selection: $galleryItems, maxSelectionCount: 5 - selectedImages.count, matching: .images)
             .sheet(isPresented: $showWebSearch) {
-                WebImagePickerView(initialQuery: name) { image in
-                    pendingImages.append(image)
-                    processNextBgIfIdle()
+                WebImagePickerView(isPresented: $showWebSearch, initialQuery: name) { finalImage, detectedColor, _ in
+                    selectedImages.append(finalImage)
+                    if let c = detectedColor { color = c }
                 }
             }
             .fullScreenCover(isPresented: $showCamera) {
