@@ -2480,9 +2480,15 @@ private final class ImageSearcher: ObservableObject {
     private var loader: WebViewLoader?
     private var disposeBag = DisposeBag()
     private var loadMoreDisposeBag = DisposeBag()
-    private var seenURLs = Set<String>()
-    // loadMore 스크롤 후 새 배치 도착 여부를 loadMore() 호출자에게 전달
+    private var seenURLs = Set<String>()      // 감지된 모든 URL (중복 방지)
+    private var displayedURLs = Set<String>() // imageURLs에 실제 추가된 URL (최종 방어)
+    private var pendingURLs: [String] = []    // 감지됐지만 아직 미표시 URL (버퍼)
     private let loadMoreResult = PublishSubject<Bool>()
+
+    private func appendToDisplay(_ urls: [String]) {
+        let unique = urls.filter { displayedURLs.insert($0).inserted }
+        imageURLs.append(contentsOf: unique)
+    }
 
     func search(query: String) {
         let q = query.trimmingCharacters(in: .whitespaces)
@@ -2494,6 +2500,8 @@ private final class ImageSearcher: ObservableObject {
         loadMoreDisposeBag = DisposeBag()
         imageURLs = []
         seenURLs.removeAll()
+        displayedURLs.removeAll()
+        pendingURLs = []
         fetchFailed = false
         hasMore = false
         isLoading = true
@@ -2513,18 +2521,32 @@ private final class ImageSearcher: ObservableObject {
             .subscribe(
                 onNext: { [weak self] batch in
                     guard let self else { return }
-                    let fresh = batch.filter { self.seenURLs.insert($0).inserted }
-                    if !fresh.isEmpty {
-                        let toAdd = self.isLoadingMore ? Array(fresh) : Array(fresh.prefix(max(0, 30 - self.imageURLs.count)))
-                        if !toAdd.isEmpty {
-                            self.imageURLs.append(contentsOf: toAdd)
-                            self.isLoading = false
-                            self.hasMore = true
-                        }
-                    }
-                    // loadMore 스크롤 후 첫 배치가 도착하면 결과 전달
+                    // seenURLs로 전체 중복 제거 (배치 내부 포함)
+                    var seen = self.seenURLs
+                    let fresh = batch.filter { seen.insert($0).inserted }
+                    self.seenURLs = seen
+
+                    guard !fresh.isEmpty else { return }
+
                     if self.isLoadingMore {
-                        self.loadMoreResult.onNext(!fresh.isEmpty)
+                        // 새 URL을 버퍼에 추가 후 30개만 표시
+                        self.pendingURLs.append(contentsOf: fresh)
+                        let batch = Array(self.pendingURLs.prefix(30))
+                        self.pendingURLs = Array(self.pendingURLs.dropFirst(30))
+                        self.appendToDisplay(batch)
+                        self.isLoading = false
+                        self.hasMore = !self.pendingURLs.isEmpty
+                        self.loadMoreResult.onNext(!batch.isEmpty)
+                    } else {
+                        let needed = max(0, 30 - self.imageURLs.count)
+                        let toDisplay = Array(fresh.prefix(needed))
+                        let toBuffer  = Array(fresh.dropFirst(needed))
+                        if !toDisplay.isEmpty {
+                            self.appendToDisplay(toDisplay)
+                            self.isLoading = false
+                        }
+                        self.pendingURLs.append(contentsOf: toBuffer)
+                        self.hasMore = true
                     }
                 },
                 onError: { [weak self] _ in
@@ -2538,27 +2560,47 @@ private final class ImageSearcher: ObservableObject {
                     guard let self else { return }
                     if self.imageURLs.isEmpty { self.fetchFailed = true }
                     self.isLoading = false
+                    self.hasMore = !self.imageURLs.isEmpty
                 }
             )
             .disposed(by: disposeBag)
     }
 
+    func findOriginalURL(for thumbnailURL: String) -> String? {
+        loader?.findOriginalURL(for: thumbnailURL)
+    }
+    
+    func resolveOriginalURL(for thumbnailURL: String) async -> String? {
+        await loader?.resolveOriginalURL(for: thumbnailURL)
+    }
+    
     func loadMore() {
         guard !isLoadingMore, hasMore, let loader = loader else { return }
         isLoadingMore = true
-        loadMoreDisposeBag = DisposeBag()
 
-        // MutationObserver가 다음 배치를 보내면 결과 수신
+        // 버퍼에 남은 URL이 있으면 30개씩 꺼내 즉시 표시
+        if !pendingURLs.isEmpty {
+            let batch = Array(pendingURLs.prefix(30))
+            pendingURLs = Array(pendingURLs.dropFirst(30))
+            appendToDisplay(batch)
+            isLoadingMore = false
+            hasMore = true  // 버퍼 소진 후에도 웹뷰 스크롤로 추가 로드 가능
+            return
+        }
+
+        // 버퍼 소진 → 웹뷰 스크롤로 Google에서 추가 이미지 로드
+        loadMoreDisposeBag = DisposeBag()
         loadMoreResult
             .take(1)
+            .timeout(.seconds(5), scheduler: MainScheduler.instance)
+            .catch { _ in Observable.just(false) }
             .observe(on: MainScheduler.instance)
             .subscribe(onNext: { [weak self] hasNewImages in
                 guard let self else { return }
-                self.hasMore = hasNewImages
+                self.hasMore = !self.imageURLs.isEmpty
                 self.isLoadingMore = false
             })
             .disposed(by: loadMoreDisposeBag)
-
         loader.scroll()
     }
 }
@@ -2570,6 +2612,7 @@ private final class ImageSearcher: ObservableObject {
 private final class WebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessageHandler, @unchecked Sendable {
     private var webView: WKWebView?
     private let subject = PublishSubject<[String]>()
+    private var thumbnailToOriginal: [String: String] = [:]
 
     // Observable<[String]>: MutationObserver → Swift subject → throttle → 구독자
     func stream(url: URL) -> Observable<[String]> {
@@ -2586,12 +2629,227 @@ private final class WebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessa
     func scroll() {
         webView?.evaluateJavaScript("window.scrollTo(0, document.body.scrollHeight)") { _, _ in }
     }
+    
+    func resolveOriginalURL(for thumbnailURL: String) async -> String? {
+        guard let webView else { return nil }
+
+        let escapedThumb = thumbnailURL
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+
+        let clickJS = """
+        (function() {
+            function cleanURL(url) {
+                if (!url) return "";
+                return url
+                    .replace(/\\\\u003d/gi, "=")
+                    .replace(/\\\\u0026/gi, "&")
+                    .replace(/\\\\u002f/gi, "/")
+                    .replace(/&amp;/g, "&")
+                    .replace(/\\\\\\//g, "/");
+            }
+
+            function sameThumb(a, b) {
+                a = cleanURL(a || "");
+                b = cleanURL(b || "");
+                return a === b || a.includes(b) || b.includes(a);
+            }
+
+            var targetThumb = cleanURL('\(escapedThumb)');
+            var imgs = Array.from(document.querySelectorAll("img"));
+            var targetImg = null;
+
+            for (var i = 0; i < imgs.length; i++) {
+                var src = cleanURL(imgs[i].currentSrc || imgs[i].src || "");
+                if (sameThumb(src, targetThumb)) {
+                    targetImg = imgs[i];
+                    break;
+                }
+            }
+
+            if (!targetImg) return "NO_TARGET";
+
+            var clickable =
+                targetImg.closest("a") ||
+                targetImg.closest("[role='button']") ||
+                targetImg.closest("div[data-ri]") ||
+                targetImg.parentElement;
+
+            if (clickable) {
+                clickable.click();
+            } else {
+                targetImg.click();
+            }
+
+            return "CLICKED";
+        })();
+        """
+
+        do {
+            let clickResult = try await webView.evaluateJavaScript(clickJS) as? String
+            Log.d("ImgSearch", "원본URL 클릭 결과: \(clickResult ?? "-")")
+        } catch {
+            Log.e("ImgSearch", "썸네일 클릭 실패: \(error.localizedDescription)")
+            return findOriginalURL(for: thumbnailURL)
+        }
+
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+
+        let extractJS = """
+        (function() {
+            function cleanURL(url) {
+                if (!url) return "";
+                return url
+                    .replace(/\\\\u003d/gi, "=")
+                    .replace(/\\\\u0026/gi, "&")
+                    .replace(/\\\\u002f/gi, "/")
+                    .replace(/&amp;/g, "&")
+                    .replace(/\\\\\\//g, "/");
+            }
+
+            function isBadURL(url) {
+                if (!url) return true;
+                if (!/^https?:\\/\\//i.test(url)) return true;
+                if (url.includes("encrypted-tbn")) return true;
+                if (url.includes("gstatic.com/images?q=")) return true;
+                if (url.includes("google.com/search")) return true;
+                if (url.includes("google.com/imgres")) return true;
+                if (url.includes("googleusercontent.com/proxy")) return true;
+                return false;
+            }
+
+            function scoreURL(url, img) {
+                if (isBadURL(url)) return -9999;
+
+                var score = 0;
+
+                if (/\\.(jpg|jpeg|png|webp|gif)(\\?|#|$)/i.test(url)) score += 50;
+                if (url.includes("cdn")) score += 20;
+                if (url.includes("image")) score += 15;
+                if (url.includes("img")) score += 15;
+
+                if (img) {
+                    var w = img.naturalWidth || 0;
+                    var h = img.naturalHeight || 0;
+
+                    score += Math.min(120, Math.floor((w * h) / 40000));
+
+                    if (w >= 400 && h >= 400) score += 60;
+                    if (w >= 800 || h >= 800) score += 80;
+                    if (w < 200 || h < 200) score -= 150;
+                }
+
+                return score;
+            }
+
+            var candidates = [];
+
+            document.querySelectorAll("img").forEach(function(img) {
+                var src = cleanURL(img.currentSrc || img.src || "");
+                var score = scoreURL(src, img);
+
+                if (score > 0) {
+                    candidates.push({
+                        url: src,
+                        score: score,
+                        w: img.naturalWidth || 0,
+                        h: img.naturalHeight || 0
+                    });
+                }
+            });
+
+            document.querySelectorAll("a[href]").forEach(function(a) {
+                var href = cleanURL(a.href || "");
+
+                try {
+                    var u = new URL(href);
+                    var imgurl = cleanURL(
+                        u.searchParams.get("imgurl") ||
+                        u.searchParams.get("url") ||
+                        ""
+                    );
+
+                    var score = scoreURL(imgurl, null);
+                    if (score > 0) {
+                        candidates.push({
+                            url: imgurl,
+                            score: score,
+                            w: 0,
+                            h: 0
+                        });
+                    }
+                } catch(e) {}
+
+                var hrefScore = scoreURL(href, null);
+                if (hrefScore > 0) {
+                    candidates.push({
+                        url: href,
+                        score: hrefScore,
+                        w: 0,
+                        h: 0
+                    });
+                }
+            });
+
+            var seen = {};
+            var unique = [];
+
+            candidates.forEach(function(item) {
+                if (!seen[item.url]) {
+                    seen[item.url] = true;
+                    unique.push(item);
+                }
+            });
+
+            unique.sort(function(a, b) {
+                return b.score - a.score;
+            });
+
+            if (unique.length === 0) {
+                return "";
+            }
+
+            return unique[0].url;
+        })();
+        """
+
+        do {
+            let result = try await webView.evaluateJavaScript(extractJS)
+
+            if let url = result as? String, !url.isEmpty {
+                Log.d("ImgSearch", "선택 이미지 원본URL 발견: \(url)")
+                return url
+            } else {
+                Log.d("ImgSearch", "선택 이미지 원본URL 비어있음")
+            }
+        } catch {
+            Log.e("ImgSearch", "원본URL 추출 실패: \(error.localizedDescription)")
+        }
+
+        return findOriginalURL(for: thumbnailURL)
+    }
+
+    // MutationObserver가 스캔 시점에 매핑해둔 딕셔너리에서 즉시 조회
+    func findOriginalURL(for thumbnailURL: String) -> String? {
+        guard var result = thumbnailToOriginal[thumbnailURL] else {
+            Log.d("ImgSearch", "원본URL 없음→썸네일 폴백")
+            return nil
+        }
+        // HTML/JSON에서 추출된 유니코드 이스케이프 정리 (e.g. = → =)
+        result = result
+            .replacingOccurrences(of: "\\u003d", with: "=", options: .caseInsensitive)
+            .replacingOccurrences(of: "\\u0026", with: "&")
+            .replacingOccurrences(of: "\\u002f", with: "/", options: .caseInsensitive)
+        Log.d("ImgSearch", "원본URL 발견: \(result)")
+        return result
+    }
 
     func cancel() {
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "imageURLs")
         webView?.stopLoading()
         webView?.removeFromSuperview()
         webView = nil
+        thumbnailToOriginal.removeAll()
         subject.onCompleted()
     }
 
@@ -2599,29 +2857,67 @@ private final class WebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessa
         let controller = WKUserContentController()
         controller.add(self, name: "imageURLs")
 
-        // JS MutationObserver: DOM 변경 감지 즉시 URL 추출 후 Swift로 전달
-        // JS 자체 스로틀(300ms)로 innerHTML 스캔 빈도를 제한
-        let js = """
+        // JS MutationObserver: 썸네일 URL 감지만 담당 (원본 URL 매핑은 DOM 쿼리로 별도 처리)
+        let js = #"""
         (function() {
             var lastPost = 0;
+
+            function cleanURL(url) {
+                if (!url) return "";
+                return url
+                    .replace(/\\u003d/gi, "=")
+                    .replace(/\\u0026/gi, "&")
+                    .replace(/\\u002f/gi, "/")
+                    .replace(/&amp;/g, "&")
+                    .replace(/\\\//g, "/");
+            }
+
             function extractAndPost() {
                 var now = Date.now();
                 if (now - lastPost < 300) return;
                 lastPost = now;
-                var re = /https:\\/\\/encrypted-tbn\\d*\\.gstatic\\.com\\/images\\?q=[A-Za-z0-9_:&=+%\\-]+/g;
-                var html = document.documentElement.innerHTML;
-                var m, results = [];
-                while ((m = re.exec(html)) !== null) {
-                    results.push(m[0]);
-                    if (results.length >= 100) break;
+
+                var results = [];
+                var seen = {};
+
+                document.querySelectorAll("img").forEach(function(img) {
+                    var src = cleanURL(img.currentSrc || img.src || "");
+                    if (!src) return;
+
+                    var isGoogleThumb =
+                        src.includes("encrypted-tbn") ||
+                        src.includes("gstatic.com/images?q=");
+
+                    if (!isGoogleThumb) return;
+                    if (seen[src]) return;
+
+                    seen[src] = true;
+                    results.push(src);
+
+                    if (results.length >= 120) return;
+                });
+
+                if (results.length > 0) {
+                    window.webkit.messageHandlers.imageURLs.postMessage(results.join("|||"));
                 }
-                if (results.length > 0)
-                    window.webkit.messageHandlers.imageURLs.postMessage(results.join('|||'));
             }
+
+            extractAndPost();
+
             var obs = new MutationObserver(extractAndPost);
-            obs.observe(document.documentElement, { childList: true, subtree: true });
+            obs.observe(document.documentElement, {
+                childList: true,
+                subtree: true,
+                attributes: true
+            });
+
+            window.addEventListener("load", function() {
+                setTimeout(extractAndPost, 500);
+                setTimeout(extractAndPost, 1500);
+                setTimeout(extractAndPost, 3000);
+            });
         })();
-        """
+        """#
         let script = WKUserScript(source: js, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         controller.addUserScript(script)
 
@@ -2662,9 +2958,20 @@ private final class WebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessa
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == "imageURLs", let body = message.body as? String else { return }
-        let urls = body.components(separatedBy: "|||").filter { !$0.isEmpty }
-        Log.d("ImgSearch", "MutationObserver 감지: \(urls.count)개")
-        subject.onNext(urls)
+        let pairs = body.components(separatedBy: "|||").filter { !$0.isEmpty }
+        var thumbURLs: [String] = []
+        for pair in pairs {
+            let parts = pair.components(separatedBy: "\t")
+            let thumb = parts[0]
+            guard !thumb.isEmpty else { continue }
+            thumbURLs.append(thumb)
+            if parts.count > 1, !parts[1].isEmpty {
+                thumbnailToOriginal[thumb] = parts[1]
+            }
+        }
+        let foundCount = thumbURLs.filter { thumbnailToOriginal[$0] != nil }.count
+        Log.d("ImgSearch", "MutationObserver 감지: \(thumbURLs.count)개 (원본매핑 \(foundCount)개)")
+        subject.onNext(thumbURLs)
     }
 }
 
@@ -2682,6 +2989,7 @@ struct WebImagePickerView: View {
     @State private var isRemovingBg = false
     @State private var bgRemoveError: String? = nil
     @State private var showBgPreview = false
+    @State private var downloadTask: Task<Void, Never>? = nil
 
     private let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
 
@@ -2724,15 +3032,8 @@ struct WebImagePickerView: View {
                             let cellSize = (geo.size.width - spacing - padding * 2) / 2
                             ScrollView {
                                 LazyVGrid(columns: columns, spacing: spacing) {
-                                    ForEach(Array(searcher.imageURLs.enumerated()), id: \.element) { index, url in
+                                    ForEach(searcher.imageURLs, id: \.self) { url in
                                         imageCell(url: url, size: cellSize)
-                                            .onAppear {
-                                                // LazyVGrid 안에서만 실제 화면 진입 시 onAppear 발동
-                                                if index == searcher.imageURLs.count - 1,
-                                                   searcher.hasMore, !searcher.isLoadingMore {
-                                                    searcher.loadMore()
-                                                }
-                                            }
                                     }
                                 }
                                 .padding(padding)
@@ -2743,11 +3044,15 @@ struct WebImagePickerView: View {
                                         .font(.caption)
                                         .padding(.vertical, 16)
                                 } else if searcher.hasMore {
-                                    Label("당겨서 더 불러오기", systemImage: "arrow.up.circle")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.vertical, 16)
-                                        .frame(maxWidth: .infinity)
+                                    Button {
+                                        searcher.loadMore()
+                                    } label: {
+                                        Label("더 불러오기", systemImage: "arrow.down.circle")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .padding(.vertical, 16)
+                                            .frame(maxWidth: .infinity)
+                                    }
                                 }
                             }
                         }
@@ -2818,8 +3123,13 @@ struct WebImagePickerView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onTapGesture {
-            if isSelected { confirmSelection() }
-            else { selectedURL = url }
+            guard !isDownloading else { return }
+
+            if isSelected {
+                confirmSelection()
+            } else {
+                selectedURL = url
+            }
         }
     }
 
@@ -2830,14 +3140,50 @@ struct WebImagePickerView: View {
     }
 
     private func confirmSelection() {
-        guard let urlString = selectedURL, let url = URL(string: urlString) else { return }
+        guard let urlString = selectedURL, let fallbackURL = URL(string: urlString) else { return }
+
+        downloadTask?.cancel()
         isDownloading = true
-        Task {
+
+        downloadTask = Task {
             do {
-                let (data, _) = try await URLSession.shared.data(from: url)
-                guard let image = UIImage(data: data) else {
-                    await MainActor.run { isDownloading = false }; return
+                let originalURLString = await searcher.resolveOriginalURL(for: urlString)
+                let downloadURL = originalURLString.flatMap(URL.init) ?? fallbackURL
+
+                Log.d("ImgSearch", "다운로드 URL: \(downloadURL.absoluteString)")
+
+                var request = URLRequest(url: downloadURL)
+                request.setValue(
+                    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+                    forHTTPHeaderField: "User-Agent"
+                )
+                request.setValue(
+                    "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                    forHTTPHeaderField: "Accept"
+                )
+
+                let (data, response) = try await URLSession.shared.data(for: request)
+
+                if let http = response as? HTTPURLResponse,
+                   !(200...299).contains(http.statusCode) {
+                    throw URLError(.badServerResponse)
                 }
+
+                guard !Task.isCancelled else {
+                    await MainActor.run { isDownloading = false }
+                    return
+                }
+
+                guard let image = UIImage(data: data) else {
+                    await MainActor.run { isDownloading = false }
+                    return
+                }
+                
+                Log.d(
+                    "HJHJ",
+                    "다운로드 이미지 사이즈: \(Int(image.size.width))x\(Int(image.size.height)), scale: \(image.scale)"
+                )
+
                 await MainActor.run {
                     downloadedImage = image
                     isRemovingBg = true
@@ -2846,14 +3192,26 @@ struct WebImagePickerView: View {
                     isDownloading = false
                     showBgPreview = true
                 }
+
                 do {
                     let removed = try await RemoveBgService.shared.removeBackground(from: image)
-                    await MainActor.run { removedBgImage = removed; isRemovingBg = false }
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        removedBgImage = removed
+                        isRemovingBg = false
+                    }
                 } catch {
-                    await MainActor.run { bgRemoveError = error.localizedDescription; isRemovingBg = false }
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        bgRemoveError = error.localizedDescription
+                        isRemovingBg = false
+                    }
                 }
             } catch {
-                await MainActor.run { isDownloading = false }
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    isDownloading = false
+                }
             }
         }
     }
