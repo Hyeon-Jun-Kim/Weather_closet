@@ -26,7 +26,6 @@ final class AppDependencyContainer {
 
     // MARK: - Use Cases
     private lazy var fetchWeatherUseCase = FetchWeatherUseCase(repository: weatherRepository)
-    private lazy var checkUmbrellaUseCase = CheckUmbrellaUseCase(repository: weatherRepository)
     private lazy var addClothingUseCase = AddClothingUseCase(repository: closetRepository)
     private lazy var getClothingListUseCase = GetClothingListUseCase(repository: closetRepository)
     private lazy var deleteClothingUseCase = DeleteClothingUseCase(repository: closetRepository)
@@ -42,7 +41,6 @@ final class AppDependencyContainer {
     func makeHomeViewModel() -> HomeViewModel {
         HomeViewModel(
             fetchWeatherUseCase: fetchWeatherUseCase,
-            checkUmbrellaUseCase: checkUmbrellaUseCase,
             locationService: locationService
         )
     }

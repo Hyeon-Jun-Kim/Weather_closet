@@ -38,6 +38,8 @@ final class LocationService: NSObject, ObservableObject {
     }
 
     private func reverseGeocode(location: CLLocation) async {
+        // 이전 요청이 진행 중이면 취소해 continuation 누수를 방지
+        geocoder.cancelGeocode()
         let name: String = await withCheckedContinuation { continuation in
             geocoder.reverseGeocodeLocation(location) { placemarks, _ in
                 let result = placemarks?.first.flatMap {
@@ -74,11 +76,11 @@ extension LocationService: CLLocationManagerDelegate {
         let lat = location.coordinate.latitude
         let lon = location.coordinate.longitude
         Log.d("HJHJ", "위치 수신 - lat: \(lat), lon: \(lon)")
-        let clLocation = location
         Task { @MainActor [weak self] in
             guard let self else { return }
+            // geocoding 완료 후 coordinate를 publish — Combine 구독자가 locationName을 함께 볼 수 있도록
+            await self.reverseGeocode(location: location)
             self.coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
-            await self.reverseGeocode(location: clLocation)
             self.isLoading = false
         }
     }

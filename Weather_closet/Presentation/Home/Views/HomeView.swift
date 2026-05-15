@@ -16,7 +16,7 @@ struct HomeView: View {
                     } else {
                         ContentUnavailableView(
                             "날씨 정보 없음",
-                            systemImage: "cloud.slash",
+                            systemImage: "exclamationmark.triangle",
                             description: Text("날씨 정보를 불러올 수 없습니다.")
                         )
                     }

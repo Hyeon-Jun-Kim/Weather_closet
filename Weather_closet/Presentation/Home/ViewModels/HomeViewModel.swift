@@ -10,40 +10,52 @@ final class HomeViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     private let fetchWeatherUseCase: FetchWeatherUseCase
-    private let checkUmbrellaUseCase: CheckUmbrellaUseCase
     let locationService: LocationService
+
+    private var cancellables = Set<AnyCancellable>()
+    private var weatherTask: Task<Void, Never>?
 
     init(
         fetchWeatherUseCase: FetchWeatherUseCase,
-        checkUmbrellaUseCase: CheckUmbrellaUseCase,
         locationService: LocationService
     ) {
         self.fetchWeatherUseCase = fetchWeatherUseCase
-        self.checkUmbrellaUseCase = checkUmbrellaUseCase
         self.locationService = locationService
+
+        locationService.$coordinate
+            .compactMap { $0 }
+            .removeDuplicates {
+                abs($0.latitude - $1.latitude) < 0.0001 && abs($0.longitude - $1.longitude) < 0.0001
+            }
+            .debounce(for: .seconds(0.3), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.weatherTask?.cancel()
+                    self.weatherTask = Task { await self.fetchWeather() }
+                }
+            }
+            .store(in: &cancellables)
     }
 
     func loadWeather() async {
-        isLoading = true
-        errorMessage = nil
-
         if locationService.coordinate == nil {
             Log.d("HJHJ", "위치 요청 시작")
+            isLoading = true
             locationService.requestLocation()
-            // 위치 수신 대기
-            var waited = 0
-            while locationService.coordinate == nil && waited < 10 {
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                waited += 1
-            }
-        }
-
-        guard let coordinate = locationService.coordinate else {
-            Log.e("HJHJ", "위치 좌표 없음 - 날씨 로드 불가")
-            errorMessage = "위치 정보를 가져올 수 없습니다."
-            isLoading = false
             return
         }
+        weatherTask?.cancel()
+        let task = Task { await fetchWeather() }
+        weatherTask = task
+        await task.value
+    }
+
+    private func fetchWeather() async {
+        guard let coordinate = locationService.coordinate else { return }
+
+        isLoading = true
+        errorMessage = nil
 
         let lat = coordinate.latitude
         let lon = coordinate.longitude
@@ -51,15 +63,29 @@ final class HomeViewModel: ObservableObject {
 
         Log.d("HJHJ", "날씨 로드 시작 - lat: \(lat), lon: \(lon), name: \(name)")
         do {
-            async let weatherTask = fetchWeatherUseCase.execute(latitude: lat, longitude: lon, locationName: name)
-            async let forecastTask = fetchWeatherUseCase.executeForecast(latitude: lat, longitude: lon)
-            async let umbrellaTask = checkUmbrellaUseCase.execute(latitude: lat, longitude: lon)
-            (weather, forecast, umbrellaRecommendation) = try await (weatherTask, forecastTask, umbrellaTask)
-            Log.d("HJHJ", "날씨 로드 성공 - temp: \(weather?.temperature ?? 0)°C, forecast: \(forecast.count)일")
+            async let weatherResult = fetchWeatherUseCase.execute(latitude: lat, longitude: lon, locationName: name)
+            async let forecastResult = fetchWeatherUseCase.executeForecast(latitude: lat, longitude: lon)
+            let (w, f) = try await (weatherResult, forecastResult)
+
+            guard !Task.isCancelled else { isLoading = false; return }
+
+            weather = w
+            forecast = f
+            umbrellaRecommendation = computeUmbrella(precipitationProbability: w.precipitationProbability)
+            Log.d("HJHJ", "날씨 로드 성공 - temp: \(w.temperature)°C, forecast: \(f.count)일")
         } catch {
+            guard !Task.isCancelled else { isLoading = false; return }
             Log.e("HJHJ", "날씨 로드 실패 - \(error.localizedDescription)")
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private func computeUmbrella(precipitationProbability: Double) -> UmbrellaRecommendation {
+        switch precipitationProbability {
+        case 0..<30:  return .none
+        case 30..<60: return .compact
+        default:      return .full
+        }
     }
 }
