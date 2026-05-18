@@ -34,8 +34,6 @@ onDismiss → 큐 초기화
 | 웹검색 (`sheet`) | `onDismiss:` 콜백 |
 | 갤러리 (`photosPicker`) | `onChange(of: galleryItems)` — 전송 데이터 로딩 완료 후 처리 |
 
-`Task.sleep`으로 타이밍 대기하지 말 것.
-
 ## AddClothingView / EditClothingView
 
 - 동일한 이미지 등록 플로우를 각각 독립적으로 보유 (`pendingImages`, `processNextBgIfIdle` 중복)

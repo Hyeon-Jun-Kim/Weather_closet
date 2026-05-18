@@ -11,8 +11,11 @@ SwiftUI + MVVM. 각 탭은 View/ViewModel 쌍으로 구성된다.
 ## View 규칙
 
 - ViewModel은 `@EnvironmentObject`로 주입. `AppCoordinator`가 루트에서 주입
-- sheet/fullScreenCover dismiss 후 후속 처리는 **`onDismiss:` 콜백** 또는 UIKit `dismiss(animated:completion:)` 사용
-- `Task.sleep`으로 dismiss 타이밍을 맞추는 방식 금지
+- **이벤트 기반 처리 원칙 적용** (루트 CLAUDE.md 참고). Presentation에서 자주 쓰는 대안:
+  - sheet/fullScreenCover dismiss → `onDismiss:` 콜백
+  - UIKit VC dismiss → `dismiss(animated:completion:)`
+  - PhotosPicker → `onChange(of: galleryItems)` (picker 닫힌 후 items 변경됨)
+  - 비동기 작업 완료 → `async/await` 또는 Combine으로 완료 시점 수신
 
 ## 탭별 ViewModel 생성
 

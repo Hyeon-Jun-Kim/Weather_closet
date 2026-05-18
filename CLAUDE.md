@@ -38,5 +38,5 @@ Presentation → Domain ← Data ← Infrastructure
 ## 전역 규칙
 
 - Swift 6 strict concurrency — UI 작업은 반드시 `@MainActor`
-- `Task.sleep`으로 타이밍을 맞추지 말 것. dismiss 후 처리는 `onDismiss:` 콜백 또는 `dismiss(animated:completion:)` 사용
+- **이벤트 기반 처리**: `Task.sleep`으로 타이밍을 추측하지 말 것. 어떤 작업이든 "완료됐을 것이다"는 가정 대신 완료 이벤트를 직접 수신해 처리한다. 구체적인 대안은 `Presentation/CLAUDE.md` 참고
 - DI: `AppDependencyContainer`에서 모든 의존성 생성, ViewModel 팩토리 메서드 제공
