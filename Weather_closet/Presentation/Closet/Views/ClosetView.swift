@@ -1006,16 +1006,128 @@ private struct CropGestureView: UIViewRepresentable {
     }
 }
 
-// fullScreenCover의 UIHostingController 배경을 투명하게 만들어 반투명 팝업 효과 구현
+// editingImageIndex 경로용: fullScreenCover의 UIHostingController 배경을 투명하게 설정
 private struct TransparentBackground: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
         DispatchQueue.main.async {
-            view.superview?.superview?.backgroundColor = .clear
+            var responder: UIResponder? = view.next
+            while let r = responder {
+                if let vc = r as? UIViewController {
+                    vc.view.backgroundColor = .clear
+                    vc.navigationController?.view.backgroundColor = .clear
+                    break
+                }
+                responder = r.next
+            }
         }
         return view
     }
     func updateUIView(_ uiView: UIView, context: Context) {}
+}
+
+// MARK: - UIKit BgPreview Presenter
+// sheet → fullScreenCover 전환 시 TransparentBackground 핵이 검은 화면을 유발하는 문제를 우회:
+// UIHostingController를 overFullScreen + view.backgroundColor = .clear 로 직접 표시
+
+@MainActor
+private final class BgPreviewSession: ObservableObject {
+    @Published var removedBg: UIImage?
+    @Published var isLoading = true
+    @Published var error: String?
+
+    let original: UIImage
+    let existingColor: String?
+    let cancelLabel: String
+    let onAccept: @MainActor (UIImage, String?, PhotoBgOption) -> Void
+    let onCancel: @MainActor () -> Void
+    let onDismiss: @MainActor () -> Void
+    var dismiss: @MainActor () -> Void = {}
+
+    init(
+        original: UIImage,
+        existingColor: String?,
+        cancelLabel: String,
+        onAccept: @escaping @MainActor (UIImage, String?, PhotoBgOption) -> Void,
+        onCancel: @escaping @MainActor () -> Void,
+        onDismiss: @escaping @MainActor () -> Void
+    ) {
+        self.original = original
+        self.existingColor = existingColor
+        self.cancelLabel = cancelLabel
+        self.onAccept = onAccept
+        self.onCancel = onCancel
+        self.onDismiss = onDismiss
+    }
+}
+
+private struct BgPreviewWrapperView: View {
+    @ObservedObject var session: BgPreviewSession
+
+    var body: some View {
+        BgRemovePreviewSheet(
+            original: session.original,
+            removedBg: session.removedBg,
+            isLoading: session.isLoading,
+            error: session.error,
+            existingColor: session.existingColor,
+            cancelLabel: session.cancelLabel,
+            onAccept: { img, color, bg in session.onAccept(img, color, bg); session.dismiss() },
+            onCancel: { session.onCancel(); session.dismiss() },
+            onDismiss: { session.onDismiss(); session.dismiss() }
+        )
+    }
+}
+
+private final class BgPreviewHostingController: UIHostingController<BgPreviewWrapperView> {
+    private let session: BgPreviewSession
+
+    init(session: BgPreviewSession) {
+        self.session = session
+        super.init(rootView: BgPreviewWrapperView(session: session))
+        modalPresentationStyle = .overFullScreen
+        modalTransitionStyle = .crossDissolve
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+    }
+}
+
+@MainActor
+private func presentBgPreview(
+    image: UIImage,
+    existingColor: String?,
+    cancelLabel: String,
+    onAccept: @escaping @MainActor (UIImage, String?, PhotoBgOption) -> Void,
+    onCancel: @escaping @MainActor () -> Void,
+    onDismiss: @escaping @MainActor () -> Void
+) {
+    var top: UIViewController? = UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .first?.windows
+        .first(where: { $0.isKeyWindow })?
+        .rootViewController
+    while let presented = top?.presentedViewController { top = presented }
+    guard let topVC = top else { return }
+
+    let session = BgPreviewSession(
+        original: image, existingColor: existingColor, cancelLabel: cancelLabel,
+        onAccept: onAccept, onCancel: onCancel, onDismiss: onDismiss
+    )
+    let vc = BgPreviewHostingController(session: session)
+    session.dismiss = { [weak vc] in vc?.dismiss(animated: true) }
+
+    topVC.present(vc, animated: true)
+
+    Task { @MainActor in
+        do { session.removedBg = try await RemoveBgService.shared.removeBackground(from: image) }
+        catch { session.error = error.localizedDescription }
+        session.isLoading = false
+    }
 }
 
 // Form 배경 탭 시 키보드 닫기 — UIScrollView에 cancelsTouchesInView=false 제스처 설치
@@ -2978,17 +3090,13 @@ private final class WebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessa
 struct WebImagePickerView: View {
     @Binding var isPresented: Bool
     let initialQuery: String
-    let onImagePicked: (UIImage, String?, PhotoBgOption) -> Void
+    // raw 이미지만 전달 — BgRemovePreview는 부모(AddClothingView/EditClothingView)에서 처리
+    let onImagePicked: (UIImage) -> Void
 
     @StateObject private var searcher = ImageSearcher()
     @State private var query = ""
     @State private var selectedURL: String? = nil
     @State private var isDownloading = false
-    @State private var downloadedImage: UIImage? = nil
-    @State private var removedBgImage: UIImage? = nil
-    @State private var isRemovingBg = false
-    @State private var bgRemoveError: String? = nil
-    @State private var showBgPreview = false
     @State private var downloadTask: Task<Void, Never>? = nil
 
     private let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
@@ -3070,29 +3178,6 @@ struct WebImagePickerView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("취소") { isPresented = false }
-                }
-            }
-            // sheet 위에 sheet를 올리지 않고 같은 NavigationStack 안에서 push
-            .navigationDestination(isPresented: $showBgPreview) {
-                if let current = downloadedImage {
-                    BgRemovePreviewSheet(
-                        original: current,
-                        removedBg: removedBgImage,
-                        isLoading: isRemovingBg,
-                        error: bgRemoveError,
-                        existingColor: nil,
-                        cancelLabel: "다시 검색"
-                    ) { finalImage, detectedColor, bg in
-                        onImagePicked(finalImage, detectedColor, bg)
-                        isPresented = false
-                    } onCancel: {
-                        showBgPreview = false
-                        downloadedImage = nil
-                        removedBgImage = nil
-                        bgRemoveError = nil
-                        selectedURL = nil
-                    }
-                    .toolbar(.hidden, for: .navigationBar)
                 }
             }
         }
@@ -3184,28 +3269,12 @@ struct WebImagePickerView: View {
                     "다운로드 이미지 사이즈: \(Int(image.size.width))x\(Int(image.size.height)), scale: \(image.scale)"
                 )
 
+                // raw image를 부모에 전달하고 sheet 닫기
+                // BgRemovePreview는 부모(AddClothingView/EditClothingView)에서 처리
                 await MainActor.run {
-                    downloadedImage = image
-                    isRemovingBg = true
-                    bgRemoveError = nil
-                    removedBgImage = nil
+                    onImagePicked(image)
                     isDownloading = false
-                    showBgPreview = true
-                }
-
-                do {
-                    let removed = try await RemoveBgService.shared.removeBackground(from: image)
-                    guard !Task.isCancelled else { return }
-                    await MainActor.run {
-                        removedBgImage = removed
-                        isRemovingBg = false
-                    }
-                } catch {
-                    guard !Task.isCancelled else { return }
-                    await MainActor.run {
-                        bgRemoveError = error.localizedDescription
-                        isRemovingBg = false
-                    }
+                    isPresented = false
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -3253,11 +3322,7 @@ struct AddClothingView: View {
     @State private var galleryItems: [PhotosPickerItem] = []
 
     @State private var pendingImages: [UIImage] = []
-    @State private var currentPendingImage: UIImage?
-    @State private var removedBgImage: UIImage?
-    @State private var isRemovingBg = false
-    @State private var showBgPreview = false
-    @State private var bgRemoveError: String?
+    @State private var isProcessingBgPreview = false
     @State private var editingImageIndex: Int? = nil
     @State private var isFromCamera = false
     @State private var isFromWeb = false
@@ -3389,6 +3454,14 @@ struct AddClothingView: View {
                     }
                 }
             }
+            .onChange(of: showWebSearch) { _, isShowing in
+                if !isShowing {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(600))
+                        processNextBgIfIdle()
+                    }
+                }
+            }
             .confirmationDialog("사진 추가 방법 선택", isPresented: $showSourcePicker) {
                 Button("카메라로 촬영")    { isFromCamera = true;  isFromWeb = false; showCamera    = true }
                 Button("갤러리에서 선택") { isFromCamera = false; isFromWeb = false; showGallery   = true }
@@ -3397,49 +3470,13 @@ struct AddClothingView: View {
             }
             .photosPicker(isPresented: $showGallery, selection: $galleryItems, maxSelectionCount: 5 - selectedImages.count, matching: .images)
             .sheet(isPresented: $showWebSearch) {
-                WebImagePickerView(isPresented: $showWebSearch, initialQuery: name) { finalImage, detectedColor, bg in
-                    selectedImages.append(finalImage)
-                    imageBgOptions.append(bg)
-                    if let c = detectedColor { color = c }
+                WebImagePickerView(isPresented: $showWebSearch, initialQuery: name) { rawImage in
+                    pendingImages.append(rawImage)
                 }
             }
             .fullScreenCover(isPresented: $showCamera) {
                 CameraPickerView { image in
                     pendingImages.append(image)
-                }
-            }
-            .fullScreenCover(isPresented: $showBgPreview) {
-                NavigationStack {
-                    if let current = currentPendingImage {
-                        BgRemovePreviewSheet(
-                            original: current,
-                            removedBg: removedBgImage,
-                            isLoading: isRemovingBg,
-                            error: bgRemoveError,
-                            existingColor: color.isEmpty ? nil : color,
-                            cancelLabel: isFromCamera ? "다시 촬영" : isFromWeb ? "다시 검색" : "다시 선택"
-                        ) { finalImage, detectedColor, bg in
-                            selectedImages.append(finalImage)
-                            imageBgOptions.append(bg)
-                            if let c = detectedColor { color = c }
-                            finishBgPreview()
-                        } onCancel: {
-                            let fromCamera = isFromCamera
-                            let fromWeb = isFromWeb
-                            pendingImages = []
-                            finishBgPreview()
-                            Task { @MainActor in
-                                try? await Task.sleep(for: .milliseconds(450))
-                                if fromCamera { showCamera = true }
-                                else if fromWeb { showWebSearch = true }
-                                else { showGallery = true }
-                            }
-                        } onDismiss: {
-                            pendingImages = []
-                            finishBgPreview()
-                        }
-                        .toolbar(.hidden, for: .navigationBar)
-                    }
                 }
             }
             .fullScreenCover(isPresented: Binding(
@@ -3471,29 +3508,41 @@ struct AddClothingView: View {
         }
     }
 
+    @MainActor
     private func processNextBgIfIdle() {
-        guard !showBgPreview, !pendingImages.isEmpty else { return }
+        guard !isProcessingBgPreview, !pendingImages.isEmpty else { return }
+        isProcessingBgPreview = true
         let image = pendingImages.removeFirst()
-        currentPendingImage = image
-        isRemovingBg = true
-        bgRemoveError = nil
-        removedBgImage = nil
-        showBgPreview = true
-        Task { @MainActor in
-            do { removedBgImage = try await RemoveBgService.shared.removeBackground(from: image) }
-            catch { bgRemoveError = error.localizedDescription }
-            isRemovingBg = false
-        }
-    }
+        let fromCamera = isFromCamera
+        let fromWeb = isFromWeb
+        let existingColor = color.isEmpty ? nil : color
+        let label = fromCamera ? "다시 촬영" : fromWeb ? "다시 검색" : "다시 선택"
 
-    private func finishBgPreview() {
-        showBgPreview = false
-        currentPendingImage = nil
-        removedBgImage = nil
-        bgRemoveError = nil
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(400))
-            processNextBgIfIdle()
+        presentBgPreview(
+            image: image,
+            existingColor: existingColor,
+            cancelLabel: label
+        ) { [self] finalImage, detectedColor, bg in
+            selectedImages.append(finalImage)
+            imageBgOptions.append(bg)
+            if let c = detectedColor { color = c }
+            isProcessingBgPreview = false
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(400))
+                processNextBgIfIdle()
+            }
+        } onCancel: { [self] in
+            pendingImages = []
+            isProcessingBgPreview = false
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(450))
+                if fromCamera { showCamera = true }
+                else if fromWeb { showWebSearch = true }
+                else { showGallery = true }
+            }
+        } onDismiss: { [self] in
+            pendingImages = []
+            isProcessingBgPreview = false
         }
     }
 
@@ -3661,11 +3710,7 @@ struct EditClothingView: View {
     @State private var galleryItems: [PhotosPickerItem] = []
 
     @State private var pendingImages: [UIImage] = []
-    @State private var currentPendingImage: UIImage?
-    @State private var removedBgImage: UIImage?
-    @State private var isRemovingBg = false
-    @State private var showBgPreview = false
-    @State private var bgRemoveError: String?
+    @State private var isProcessingBgPreview = false
 
     init(clothing: ClothingEntity) {
         self.original = clothing
@@ -3808,6 +3853,14 @@ struct EditClothingView: View {
                     }
                 }
             }
+            .onChange(of: showWebSearch) { _, isShowing in
+                if !isShowing {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(600))
+                        processNextBgIfIdle()
+                    }
+                }
+            }
             .task {
                 selectedImages = original.imageURLs.compactMap {
                     ImageStorageService.shared.load(path: $0)
@@ -3821,9 +3874,8 @@ struct EditClothingView: View {
             }
             .photosPicker(isPresented: $showGallery, selection: $galleryItems, maxSelectionCount: 5 - selectedImages.count, matching: .images)
             .sheet(isPresented: $showWebSearch) {
-                WebImagePickerView(isPresented: $showWebSearch, initialQuery: name) { finalImage, detectedColor, _ in
-                    selectedImages.append(finalImage)
-                    if let c = detectedColor { color = c }
+                WebImagePickerView(isPresented: $showWebSearch, initialQuery: name) { rawImage in
+                    pendingImages.append(rawImage)
                 }
             }
             .fullScreenCover(isPresented: $showCamera) {
@@ -3831,53 +3883,34 @@ struct EditClothingView: View {
                     pendingImages.append(image)
                 }
             }
-            .fullScreenCover(isPresented: $showBgPreview) {
-                NavigationStack {
-                    if let current = currentPendingImage {
-                        BgRemovePreviewSheet(
-                            original: current,
-                            removedBg: removedBgImage,
-                            isLoading: isRemovingBg,
-                            error: bgRemoveError,
-                            existingColor: color.isEmpty ? nil : color
-                        ) { finalImage, detectedColor, _ in
-                            selectedImages.append(finalImage)
-                            if let c = detectedColor { color = c }
-                            finishBgPreview()
-                        } onCancel: {
-                            pendingImages = []
-                            finishBgPreview()
-                        }
-                        .toolbar(.hidden, for: .navigationBar)
-                    }
-                }
-            }
         }
     }
 
+    @MainActor
     private func processNextBgIfIdle() {
-        guard !showBgPreview, !pendingImages.isEmpty else { return }
+        guard !isProcessingBgPreview, !pendingImages.isEmpty else { return }
+        isProcessingBgPreview = true
         let image = pendingImages.removeFirst()
-        currentPendingImage = image
-        isRemovingBg = true
-        bgRemoveError = nil
-        removedBgImage = nil
-        showBgPreview = true
-        Task { @MainActor in
-            do { removedBgImage = try await RemoveBgService.shared.removeBackground(from: image) }
-            catch { bgRemoveError = error.localizedDescription }
-            isRemovingBg = false
-        }
-    }
+        let existingColor = color.isEmpty ? nil : color
 
-    private func finishBgPreview() {
-        showBgPreview = false
-        currentPendingImage = nil
-        removedBgImage = nil
-        bgRemoveError = nil
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(400))
-            processNextBgIfIdle()
+        presentBgPreview(
+            image: image,
+            existingColor: existingColor,
+            cancelLabel: "다시 선택"
+        ) { [self] finalImage, detectedColor, _ in
+            selectedImages.append(finalImage)
+            if let c = detectedColor { color = c }
+            isProcessingBgPreview = false
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(400))
+                processNextBgIfIdle()
+            }
+        } onCancel: { [self] in
+            pendingImages = []
+            isProcessingBgPreview = false
+        } onDismiss: { [self] in
+            pendingImages = []
+            isProcessingBgPreview = false
         }
     }
 
