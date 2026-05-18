@@ -1104,15 +1104,34 @@ private func presentBgPreview(
     cancelLabel: String,
     onAccept: @escaping @MainActor (UIImage, String?, PhotoBgOption) -> Void,
     onCancel: @escaping @MainActor () -> Void,
-    onDismiss: @escaping @MainActor () -> Void
+    onDismiss: @escaping @MainActor () -> Void,
+    _retryCount: Int = 0
 ) {
-    var top: UIViewController? = UIApplication.shared.connectedScenes
+    // 카메라/갤러리 dismiss 애니메이션이 아직 진행 중일 수 있으므로
+    // isBeingDismissed VC를 건너뛰고 안정적인 부모 VC를 찾는다
+    var base: UIViewController? = UIApplication.shared.connectedScenes
         .compactMap { $0 as? UIWindowScene }
         .first?.windows
         .first(where: { $0.isKeyWindow })?
         .rootViewController
-    while let presented = top?.presentedViewController { top = presented }
-    guard let topVC = top else { return }
+    while let presented = base?.presentedViewController, !presented.isBeingDismissed {
+        base = presented
+    }
+    guard let topVC = base else { return }
+
+    // 아직 dismiss 중인 자식 VC가 남아 있으면 완료 후 재시도 (최대 15회, 150ms 간격)
+    if topVC.presentedViewController != nil {
+        guard _retryCount < 15 else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(150))
+            presentBgPreview(
+                image: image, existingColor: existingColor, cancelLabel: cancelLabel,
+                onAccept: onAccept, onCancel: onCancel, onDismiss: onDismiss,
+                _retryCount: _retryCount + 1
+            )
+        }
+        return
+    }
 
     let session = BgPreviewSession(
         original: image, existingColor: existingColor, cancelLabel: cancelLabel,
@@ -3443,6 +3462,8 @@ struct AddClothingView: View {
                         }
                     }
                     galleryItems = []
+                    // PhotosPicker가 완전히 닫힌 뒤 표시되도록 충분히 대기
+                    try? await Task.sleep(for: .milliseconds(500))
                     processNextBgIfIdle()
                 }
             }
@@ -3842,6 +3863,7 @@ struct EditClothingView: View {
                         }
                     }
                     galleryItems = []
+                    try? await Task.sleep(for: .milliseconds(500))
                     processNextBgIfIdle()
                 }
             }
