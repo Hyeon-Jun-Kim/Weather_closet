@@ -1042,7 +1042,7 @@ private final class BgPreviewSession: ObservableObject {
     let onAccept: @MainActor (UIImage, String?, PhotoBgOption) -> Void
     let onCancel: @MainActor () -> Void
     let onDismiss: @MainActor () -> Void
-    var dismiss: @MainActor () -> Void = {}
+    var dismiss: @MainActor (@escaping @MainActor () -> Void) -> Void = { _ in }
 
     init(
         original: UIImage,
@@ -1072,9 +1072,9 @@ private struct BgPreviewWrapperView: View {
             error: session.error,
             existingColor: session.existingColor,
             cancelLabel: session.cancelLabel,
-            onAccept: { img, color, bg in session.onAccept(img, color, bg); session.dismiss() },
-            onCancel: { session.onCancel(); session.dismiss() },
-            onDismiss: { session.onDismiss(); session.dismiss() }
+            onAccept: { img, color, bg in session.dismiss { session.onAccept(img, color, bg) } },
+            onCancel: { session.dismiss { session.onCancel() } },
+            onDismiss: { session.dismiss { session.onDismiss() } }
         )
     }
 }
@@ -1138,7 +1138,9 @@ private func presentBgPreview(
         onAccept: onAccept, onCancel: onCancel, onDismiss: onDismiss
     )
     let vc = BgPreviewHostingController(session: session)
-    session.dismiss = { [weak vc] in vc?.dismiss(animated: true) }
+    session.dismiss = { [weak vc] completion in
+        vc?.dismiss(animated: true) { Task { @MainActor in completion() } }
+    }
 
     topVC.present(vc, animated: true)
 
@@ -3462,25 +3464,7 @@ struct AddClothingView: View {
                         }
                     }
                     galleryItems = []
-                    // PhotosPicker가 완전히 닫힌 뒤 표시되도록 충분히 대기
-                    try? await Task.sleep(for: .milliseconds(500))
                     processNextBgIfIdle()
-                }
-            }
-            .onChange(of: showCamera) { _, isShowing in
-                if !isShowing {
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(350))
-                        processNextBgIfIdle()
-                    }
-                }
-            }
-            .onChange(of: showWebSearch) { _, isShowing in
-                if !isShowing {
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(600))
-                        processNextBgIfIdle()
-                    }
                 }
             }
             .confirmationDialog("사진 추가 방법 선택", isPresented: $showSourcePicker) {
@@ -3490,12 +3474,12 @@ struct AddClothingView: View {
                 Button("취소", role: .cancel) {}
             }
             .photosPicker(isPresented: $showGallery, selection: $galleryItems, maxSelectionCount: 5 - selectedImages.count, matching: .images)
-            .sheet(isPresented: $showWebSearch) {
+            .sheet(isPresented: $showWebSearch, onDismiss: { processNextBgIfIdle() }) {
                 WebImagePickerView(isPresented: $showWebSearch, initialQuery: name) { rawImage in
                     pendingImages.append(rawImage)
                 }
             }
-            .fullScreenCover(isPresented: $showCamera) {
+            .fullScreenCover(isPresented: $showCamera, onDismiss: { processNextBgIfIdle() }) {
                 CameraPickerView { image in
                     pendingImages.append(image)
                 }
@@ -3548,19 +3532,13 @@ struct AddClothingView: View {
             imageBgOptions.append(bg)
             if let c = detectedColor { color = c }
             isProcessingBgPreview = false
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(400))
-                processNextBgIfIdle()
-            }
+            processNextBgIfIdle()
         } onCancel: { [self] in
             pendingImages = []
             isProcessingBgPreview = false
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(450))
-                if fromCamera { showCamera = true }
-                else if fromWeb { showWebSearch = true }
-                else { showGallery = true }
-            }
+            if fromCamera { showCamera = true }
+            else if fromWeb { showWebSearch = true }
+            else { showGallery = true }
         } onDismiss: { [self] in
             pendingImages = []
             isProcessingBgPreview = false
@@ -3863,24 +3841,7 @@ struct EditClothingView: View {
                         }
                     }
                     galleryItems = []
-                    try? await Task.sleep(for: .milliseconds(500))
                     processNextBgIfIdle()
-                }
-            }
-            .onChange(of: showCamera) { _, isShowing in
-                if !isShowing {
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(350))
-                        processNextBgIfIdle()
-                    }
-                }
-            }
-            .onChange(of: showWebSearch) { _, isShowing in
-                if !isShowing {
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(600))
-                        processNextBgIfIdle()
-                    }
                 }
             }
             .task {
@@ -3895,12 +3856,12 @@ struct EditClothingView: View {
                 Button("취소", role: .cancel) {}
             }
             .photosPicker(isPresented: $showGallery, selection: $galleryItems, maxSelectionCount: 5 - selectedImages.count, matching: .images)
-            .sheet(isPresented: $showWebSearch) {
+            .sheet(isPresented: $showWebSearch, onDismiss: { processNextBgIfIdle() }) {
                 WebImagePickerView(isPresented: $showWebSearch, initialQuery: name) { rawImage in
                     pendingImages.append(rawImage)
                 }
             }
-            .fullScreenCover(isPresented: $showCamera) {
+            .fullScreenCover(isPresented: $showCamera, onDismiss: { processNextBgIfIdle() }) {
                 CameraPickerView { image in
                     pendingImages.append(image)
                 }
@@ -3923,10 +3884,7 @@ struct EditClothingView: View {
             selectedImages.append(finalImage)
             if let c = detectedColor { color = c }
             isProcessingBgPreview = false
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(400))
-                processNextBgIfIdle()
-            }
+            processNextBgIfIdle()
         } onCancel: { [self] in
             pendingImages = []
             isProcessingBgPreview = false
