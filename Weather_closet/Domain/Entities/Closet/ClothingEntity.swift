@@ -2,6 +2,7 @@ import Foundation
 
 struct ClothingEntity: Identifiable {
     let id: UUID
+    var createdAt: Date
     var name: String
     var brand: String
     var category: ClothingCategory

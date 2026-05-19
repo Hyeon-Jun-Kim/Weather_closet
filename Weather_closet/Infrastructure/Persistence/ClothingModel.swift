@@ -4,6 +4,7 @@ import SwiftData
 @Model
 final class ClothingModel {
     @Attribute(.unique) var id: UUID
+    var createdAt: Date = Date()
     var name: String
     var brand: String
     var categoryRaw: String
@@ -29,6 +30,7 @@ final class ClothingModel {
 
     init(entity: ClothingEntity) {
         self.id = entity.id
+        self.createdAt = entity.createdAt
         self.name = entity.name
         self.brand = entity.brand
         self.categoryRaw = entity.category.rawValue
@@ -77,6 +79,7 @@ final class ClothingModel {
     func toEntity() -> ClothingEntity {
         ClothingEntity(
             id: id,
+            createdAt: createdAt,
             name: name,
             brand: brand,
             category: ClothingCategory(rawValue: categoryRaw) ?? .etc,

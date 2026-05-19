@@ -11,7 +11,7 @@ final class ClosetLocalDataSource {
 
     func fetchAll() async throws -> [ClothingEntity] {
         let context = persistence.modelContext
-        let descriptor = FetchDescriptor<ClothingModel>(sortBy: [SortDescriptor(\.name)])
+        let descriptor = FetchDescriptor<ClothingModel>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
         let models = try context.fetch(descriptor)
         return models.map { $0.toEntity() }
     }

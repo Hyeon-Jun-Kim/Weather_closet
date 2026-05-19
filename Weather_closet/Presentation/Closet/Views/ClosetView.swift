@@ -17,6 +17,8 @@ enum ClosetMainTab: Hashable, CaseIterable {
 struct ClosetView: View {
     @EnvironmentObject var viewModel: ClosetViewModel
     @State private var showAddSheet = false
+    @State private var showAddWishlistSheet = false
+    @State private var showAddOutfitSheet = false
     @State private var selectedTab: ClosetMainTab = .closet
 
     var body: some View {
@@ -48,18 +50,21 @@ struct ClosetView: View {
                     .tabViewStyle(.page(indexDisplayMode: .never))
                 }
 
-                if selectedTab == .closet {
-                    Button { showAddSheet = true } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
-                            .background(Color(.systemGray).opacity(0.85), in: Circle())
+                Button {
+                    switch selectedTab {
+                    case .closet:   showAddSheet = true
+                    case .wishlist: showAddWishlistSheet = true
+                    case .outfit:   showAddOutfitSheet = true
                     }
-                    .padding(.trailing, 20)
-                    .padding(.bottom, 20)
-                    .transition(.scale.combined(with: .opacity))
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Color(.systemGray).opacity(0.85), in: Circle())
                 }
+                .padding(.trailing, 20)
+                .padding(.bottom, 20)
             }
             .animation(.easeInOut(duration: 0.2), value: selectedTab)
             .navigationBarTitleDisplayMode(.inline)
@@ -67,6 +72,12 @@ struct ClosetView: View {
             .sheet(isPresented: $showAddSheet) {
                 AddClothingView()
                     .environmentObject(viewModel)
+            }
+            .sheet(isPresented: $showAddWishlistSheet) {
+                ContentUnavailableView("준비 중", systemImage: "heart", description: Text("위시리스트 추가 기능은 준비 중입니다."))
+            }
+            .sheet(isPresented: $showAddOutfitSheet) {
+                ContentUnavailableView("준비 중", systemImage: "person.crop.rectangle.stack", description: Text("코디 추가 기능은 준비 중입니다."))
             }
         }
     }
@@ -3644,6 +3655,7 @@ struct AddClothingView: View {
             }
             let clothing = ClothingEntity(
                 id: clothingID,
+                createdAt: Date(),
                 name: name,
                 brand: brand,
                 category: category,
@@ -3990,6 +4002,7 @@ struct EditClothingView: View {
             }
             let updated = ClothingEntity(
                 id: original.id,
+                createdAt: original.createdAt,
                 name: name,
                 brand: brand,
                 category: category,
