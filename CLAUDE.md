@@ -23,6 +23,7 @@ Presentation → Domain ← Data ← Infrastructure
 - `Weather_closet/Data/CLAUDE.md`
 - `Weather_closet/Infrastructure/CLAUDE.md`
 - `Weather_closet/Presentation/CLAUDE.md`
+  - `Weather_closet/Presentation/UI/CLAUDE.md` — UI 공통 규약
   - `Weather_closet/Presentation/Closet/CLAUDE.md`
 
 ## 탭 구성
@@ -46,6 +47,17 @@ Presentation → Domain ← Data ← Infrastructure
 > "이 작업은 [해당 규약]과 충돌합니다. 규약을 업데이트할까요, 아니면 규약대로 진행할까요?"
 
 규약을 업데이트하기로 했다면 작업 완료 후 관련 CLAUDE.md도 함께 수정한다.
+
+## 빌드 검증 원칙
+
+수정 작업이 끝나면 반드시 빌드를 실행해 오류가 없는지 확인한다. 빌드 명령:
+
+```bash
+xcodebuild -project Weather_closet.xcodeproj -scheme Weather_closet \
+  -destination "platform=iOS Simulator,name=iPhone 16" build 2>&1 | grep -E "error:|warning:|BUILD"
+```
+
+빌드가 실패하면 오류를 수정한 뒤 다시 빌드해 `BUILD SUCCEEDED`를 확인하고 사용자에게 결과를 보고한다.
 
 ## 전역 규칙
 

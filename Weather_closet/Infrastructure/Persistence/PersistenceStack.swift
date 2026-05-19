@@ -15,6 +15,7 @@ final class PersistenceStack {
             CalendarEventModel.self,
             UserModel.self,
             BodyMeasurementModel.self,
+            WishlistItemModel.self,
         ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 

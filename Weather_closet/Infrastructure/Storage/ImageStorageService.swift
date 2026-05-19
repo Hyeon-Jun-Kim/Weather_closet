@@ -21,6 +21,16 @@ final class ImageStorageService: @unchecked Sendable {
         return fileName  // 파일명만 저장 — 절대 경로는 앱 재설치 시 변경됨
     }
 
+    func savePNG(_ image: UIImage, name: String) throws -> String {
+        guard let data = image.pngData() else {
+            throw StorageError.compressionFailed
+        }
+        let fileName = "\(name).png"
+        let url = directory.appendingPathComponent(fileName)
+        try data.write(to: url, options: .atomic)
+        return fileName
+    }
+
     func load(path: String) -> UIImage? {
         let resolvedPath = resolve(path)
         if let image = UIImage(contentsOfFile: resolvedPath) { return image }

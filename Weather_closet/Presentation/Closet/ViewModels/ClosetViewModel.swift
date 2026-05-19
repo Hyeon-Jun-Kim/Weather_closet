@@ -74,6 +74,12 @@ final class ClosetViewModel: ObservableObject {
         }
     }
 
+    func saveBackgroundRemovedURL(_ path: String, for id: UUID) async {
+        guard let idx = clothingList.firstIndex(where: { $0.id == id }) else { return }
+        clothingList[idx].backgroundRemovedImageURL = path
+        do { try await updateClothingUseCase.execute(clothingList[idx]) } catch {}
+    }
+
     func updateClothing(_ clothing: ClothingEntity) async {
         do {
             try await updateClothingUseCase.execute(clothing)

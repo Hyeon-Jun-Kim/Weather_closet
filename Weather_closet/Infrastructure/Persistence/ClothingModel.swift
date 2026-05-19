@@ -23,6 +23,7 @@ final class ClothingModel {
     var purchasePrice: Double?
     var purchasePlace: String
     var imageURLs: [String]
+    var backgroundRemovedImageURL: String? = nil
     var tags: [String]
     var isActive: Bool
 
@@ -49,6 +50,7 @@ final class ClothingModel {
         self.purchasePrice = entity.purchasePrice
         self.purchasePlace = entity.purchasePlace
         self.imageURLs = entity.imageURLs
+        self.backgroundRemovedImageURL = entity.backgroundRemovedImageURL
         self.tags = entity.tags
         self.isActive = entity.isActive
     }
@@ -72,6 +74,7 @@ final class ClothingModel {
         purchasePrice = entity.purchasePrice
         purchasePlace = entity.purchasePlace
         imageURLs = entity.imageURLs
+        backgroundRemovedImageURL = entity.backgroundRemovedImageURL
         tags = entity.tags
         isActive = entity.isActive
     }
@@ -95,6 +98,7 @@ final class ClothingModel {
             purchasePrice: purchasePrice,
             purchasePlace: purchasePlace,
             imageURLs: imageURLs,
+            backgroundRemovedImageURL: backgroundRemovedImageURL,
             tags: tags,
             isActive: isActive
         )

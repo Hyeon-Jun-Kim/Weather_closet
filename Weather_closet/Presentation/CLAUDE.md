@@ -29,4 +29,5 @@ SwiftUI + MVVM. 각 탭은 View/ViewModel 쌍으로 구성된다.
 ## 기능별 상세
 
 복잡한 기능은 해당 디렉토리 CLAUDE.md 참고:
+- `UI/CLAUDE.md` — UI 공통 규약 (키보드, 레이아웃, 이벤트 처리)
 - `Closet/CLAUDE.md` — 이미지 등록/배경 제거 플로우

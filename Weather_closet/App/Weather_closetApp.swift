@@ -10,6 +10,7 @@ struct Weather_closetApp: App {
                 .environmentObject(coordinator.homeViewModel)
                 .environmentObject(coordinator.calendarViewModel)
                 .environmentObject(coordinator.closetViewModel)
+                .environmentObject(coordinator.wishlistViewModel)
                 .environmentObject(coordinator.analysisViewModel)
                 .environmentObject(coordinator.profileViewModel)
         }

@@ -18,6 +18,7 @@ struct ClothingEntity: Identifiable {
     var purchasePrice: Double?
     var purchasePlace: String
     var imageURLs: [String]
+    var backgroundRemovedImageURL: String?
     var tags: [String]
     var isActive: Bool
 }

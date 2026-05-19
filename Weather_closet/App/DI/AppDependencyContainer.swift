@@ -13,6 +13,7 @@ final class AppDependencyContainer {
     private lazy var closetLocalDataSource = ClosetLocalDataSource(persistence: persistenceStack)
     private lazy var userLocalDataSource = UserLocalDataSource(persistence: persistenceStack)
     private lazy var calendarLocalDataSource = CalendarLocalDataSource(persistence: persistenceStack)
+    private lazy var wishlistLocalDataSource = WishlistLocalDataSource(persistence: persistenceStack)
 
     // MARK: - Repositories
     private lazy var weatherRepository: WeatherRepositoryProtocol =
@@ -23,9 +24,15 @@ final class AppDependencyContainer {
         CalendarRepository(localDataSource: calendarLocalDataSource)
     private lazy var userRepository: UserRepositoryProtocol =
         UserRepository(localDataSource: userLocalDataSource)
+    private lazy var wishlistRepository: WishlistRepositoryProtocol =
+        WishlistRepository(localDataSource: wishlistLocalDataSource)
 
     // MARK: - Use Cases
     private lazy var fetchWeatherUseCase = FetchWeatherUseCase(repository: weatherRepository)
+    private lazy var getWishlistUseCase = GetWishlistUseCase(repository: wishlistRepository)
+    private lazy var addWishlistItemUseCase = AddWishlistItemUseCase(repository: wishlistRepository)
+    private lazy var updateWishlistItemUseCase = UpdateWishlistItemUseCase(repository: wishlistRepository)
+    private lazy var deleteWishlistItemUseCase = DeleteWishlistItemUseCase(repository: wishlistRepository)
     private lazy var addClothingUseCase = AddClothingUseCase(repository: closetRepository)
     private lazy var getClothingListUseCase = GetClothingListUseCase(repository: closetRepository)
     private lazy var deleteClothingUseCase = DeleteClothingUseCase(repository: closetRepository)
@@ -68,5 +75,14 @@ final class AppDependencyContainer {
 
     func makeProfileViewModel() -> ProfileViewModel {
         ProfileViewModel(userRepository: userRepository)
+    }
+
+    func makeWishlistViewModel() -> WishlistViewModel {
+        WishlistViewModel(
+            getWishlistUseCase: getWishlistUseCase,
+            addWishlistItemUseCase: addWishlistItemUseCase,
+            updateWishlistItemUseCase: updateWishlistItemUseCase,
+            deleteWishlistItemUseCase: deleteWishlistItemUseCase
+        )
     }
 }

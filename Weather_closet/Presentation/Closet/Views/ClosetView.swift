@@ -9,13 +9,14 @@ enum ClosetMainTab: Hashable, CaseIterable {
         switch self {
         case .closet:   return "옷장"
         case .wishlist: return "위시리스트"
-        case .outfit:   return "코디"
+        case .outfit:   return "조합"
         }
     }
 }
 
 struct ClosetView: View {
     @EnvironmentObject var viewModel: ClosetViewModel
+    @EnvironmentObject var wishlistViewModel: WishlistViewModel
     @State private var showAddSheet = false
     @State private var showAddWishlistSheet = false
     @State private var showAddOutfitSheet = false
@@ -31,21 +32,12 @@ struct ClosetView: View {
                         VStack(spacing: 0) { closetContent }
                             .tag(ClosetMainTab.closet)
 
-                        ContentUnavailableView(
-                            "위시리스트",
-                            systemImage: "heart",
-                            description: Text("준비 중입니다.")
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .tag(ClosetMainTab.wishlist)
+                        WishlistView(showAddSheet: $showAddWishlistSheet)
+                            .environmentObject(wishlistViewModel)
+                            .tag(ClosetMainTab.wishlist)
 
-                        ContentUnavailableView(
-                            "코디",
-                            systemImage: "person.crop.rectangle.stack",
-                            description: Text("준비 중입니다.")
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .tag(ClosetMainTab.outfit)
+                        OutfitListPlaceholderView()
+                            .tag(ClosetMainTab.outfit)
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
                 }
@@ -73,11 +65,8 @@ struct ClosetView: View {
                 AddClothingView()
                     .environmentObject(viewModel)
             }
-            .sheet(isPresented: $showAddWishlistSheet) {
-                ContentUnavailableView("준비 중", systemImage: "heart", description: Text("위시리스트 추가 기능은 준비 중입니다."))
-            }
             .sheet(isPresented: $showAddOutfitSheet) {
-                ContentUnavailableView("준비 중", systemImage: "person.crop.rectangle.stack", description: Text("코디 추가 기능은 준비 중입니다."))
+                OutfitComposerView(clothingList: viewModel.clothingList)
             }
         }
     }
@@ -109,6 +98,19 @@ struct ClosetView: View {
             ClothingGridView(items: viewModel.filteredList)
                 .environmentObject(viewModel)
         }
+    }
+}
+
+// MARK: - Outfit List Placeholder
+
+struct OutfitListPlaceholderView: View {
+    var body: some View {
+        ContentUnavailableView(
+            "저장된 조합 없음",
+            systemImage: "person.crop.rectangle.stack",
+            description: Text("+ 버튼으로 코디를 구성해보세요.")
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -1052,7 +1054,7 @@ private final class BgPreviewSession: ObservableObject {
     let original: UIImage
     let existingColor: String?
     let cancelLabel: String
-    let onAccept: @MainActor (UIImage, String?, PhotoBgOption) -> Void
+    let onAccept: @MainActor (UIImage, UIImage?, String?, PhotoBgOption) -> Void
     let onCancel: @MainActor () -> Void
     let onDismiss: @MainActor () -> Void
     var dismiss: @MainActor (@escaping @MainActor () -> Void) -> Void = { _ in }
@@ -1061,7 +1063,7 @@ private final class BgPreviewSession: ObservableObject {
         original: UIImage,
         existingColor: String?,
         cancelLabel: String,
-        onAccept: @escaping @MainActor (UIImage, String?, PhotoBgOption) -> Void,
+        onAccept: @escaping @MainActor (UIImage, UIImage?, String?, PhotoBgOption) -> Void,
         onCancel: @escaping @MainActor () -> Void,
         onDismiss: @escaping @MainActor () -> Void
     ) {
@@ -1085,7 +1087,7 @@ private struct BgPreviewWrapperView: View {
             error: session.error,
             existingColor: session.existingColor,
             cancelLabel: session.cancelLabel,
-            onAccept: { img, color, bg in session.dismiss { session.onAccept(img, color, bg) } },
+            onAccept: { img, transparent, color, bg in session.dismiss { session.onAccept(img, transparent, color, bg) } },
             onCancel: { session.dismiss { session.onCancel() } },
             onDismiss: { session.dismiss { session.onDismiss() } }
         )
@@ -1115,7 +1117,7 @@ private func presentBgPreview(
     image: UIImage,
     existingColor: String?,
     cancelLabel: String,
-    onAccept: @escaping @MainActor (UIImage, String?, PhotoBgOption) -> Void,
+    onAccept: @escaping @MainActor (UIImage, UIImage?, String?, PhotoBgOption) -> Void,
     onCancel: @escaping @MainActor () -> Void,
     onDismiss: @escaping @MainActor () -> Void,
     _retryCount: Int = 0
@@ -1634,7 +1636,7 @@ struct BgRemovePreviewSheet: View {
     var isEditMode: Bool = false
     var existingBg: PhotoBgOption = .transparent
     var cancelLabel: String = "다시 선택"
-    let onAccept: (UIImage, String?, PhotoBgOption) -> Void
+    let onAccept: (UIImage, UIImage?, String?, PhotoBgOption) -> Void
     let onCancel: () -> Void
     var onDismiss: (() -> Void)? = nil  // X버튼·배경탭 전용 (nil이면 onCancel로 폴백)
 
@@ -2163,7 +2165,7 @@ struct BgRemovePreviewSheet: View {
             .clipShape(Capsule())
             .overlay(Capsule().strokeBorder(Color(.label), lineWidth: 1.5))
 
-            Button { onAccept(compositeImage(), selectedSuggestion, selectedBg) } label: {
+            Button { onAccept(compositeImage(), removedBg != nil ? displayImage : nil, selectedSuggestion, selectedBg) } label: {
                 Text(isEditMode ? "저장" : "사진 등록")
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
@@ -3348,6 +3350,7 @@ struct AddClothingView: View {
     @State private var rating: Double = 0
 
     @State private var selectedImages: [UIImage] = []
+    @State private var bgRemovedImages: [UIImage?] = []   // 투명 원본 (PNG 저장용)
     @State private var imageBgOptions: [PhotoBgOption] = []
     @State private var showSourcePicker = false
     @State private var showCamera = false
@@ -3511,8 +3514,9 @@ struct AddClothingView: View {
                             existingColor: color.isEmpty ? nil : color,
                             isEditMode: true,
                             existingBg: idx < imageBgOptions.count ? imageBgOptions[idx] : .transparent
-                        ) { finalImage, detectedColor, bg in
+                        ) { finalImage, transparentImage, detectedColor, bg in
                             selectedImages[idx] = finalImage
+                            if idx < bgRemovedImages.count { bgRemovedImages[idx] = transparentImage } else { bgRemovedImages.append(transparentImage) }
                             if idx < imageBgOptions.count { imageBgOptions[idx] = bg } else { imageBgOptions.append(bg) }
                             if let c = detectedColor, !c.isEmpty { color = c }
                             editingImageIndex = nil
@@ -3540,8 +3544,9 @@ struct AddClothingView: View {
             image: image,
             existingColor: existingColor,
             cancelLabel: label
-        ) { [self] finalImage, detectedColor, bg in
+        ) { [self] finalImage, transparentImage, detectedColor, bg in
             selectedImages.append(finalImage)
+            bgRemovedImages.append(transparentImage)
             imageBgOptions.append(bg)
             if let c = detectedColor { color = c }
             isProcessingBgPreview = false
@@ -3606,6 +3611,7 @@ struct AddClothingView: View {
                             .overlay(alignment: .topTrailing) {
                                 Button {
                                     selectedImages.remove(at: idx)
+                                    if idx < bgRemovedImages.count { bgRemovedImages.remove(at: idx) }
                                     if idx < imageBgOptions.count { imageBgOptions.remove(at: idx) }
                                     if selectedImages.isEmpty { color = "" }
                                 } label: {
@@ -3653,6 +3659,10 @@ struct AddClothingView: View {
                     imagePaths.append(path)
                 }
             }
+            // 투명 배경 원본을 PNG로 저장 (코디 탭에서 사용)
+            let bgRemovedPath = (bgRemovedImages.first ?? nil).flatMap {
+                try? ImageStorageService.shared.savePNG($0, name: "\(clothingID.uuidString)_bg")
+            }
             let clothing = ClothingEntity(
                 id: clothingID,
                 createdAt: Date(),
@@ -3677,6 +3687,7 @@ struct AddClothingView: View {
                 purchasePrice: Double(purchasePrice),
                 purchasePlace: purchasePlace,
                 imageURLs: imagePaths,
+                backgroundRemovedImageURL: bgRemovedPath,
                 tags: [],
                 isActive: true
             )
@@ -3724,6 +3735,7 @@ struct EditClothingView: View {
 
     @State private var pendingImages: [UIImage] = []
     @State private var isProcessingBgPreview = false
+    @State private var newBgRemovedImage: UIImage? = nil  // BgPreview 통과한 최신 이미지
 
     init(clothing: ClothingEntity) {
         self.original = clothing
@@ -3894,8 +3906,9 @@ struct EditClothingView: View {
             image: image,
             existingColor: existingColor,
             cancelLabel: "다시 선택"
-        ) { [self] finalImage, detectedColor, _ in
+        ) { [self] finalImage, transparentImage, detectedColor, _ in
             selectedImages.append(finalImage)
+            if newBgRemovedImage == nil { newBgRemovedImage = transparentImage }  // 첫 번째 신규 투명 이미지 보존
             if let c = detectedColor { color = c }
             isProcessingBgPreview = false
             processNextBgIfIdle()
@@ -4000,6 +4013,16 @@ struct EditClothingView: View {
                     imagePaths.append(path)
                 }
             }
+            // 신규 이미지가 추가된 경우에만 PNG 갱신, 없으면 기존 경로 유지
+            let bgRemovedPath: String?
+            if let newImage = newBgRemovedImage {
+                if let old = original.backgroundRemovedImageURL {
+                    ImageStorageService.shared.delete(path: old)
+                }
+                bgRemovedPath = try? ImageStorageService.shared.savePNG(newImage, name: "\(original.id.uuidString)_bg")
+            } else {
+                bgRemovedPath = original.backgroundRemovedImageURL
+            }
             let updated = ClothingEntity(
                 id: original.id,
                 createdAt: original.createdAt,
@@ -4024,6 +4047,7 @@ struct EditClothingView: View {
                 purchasePrice: Double(purchasePrice),
                 purchasePlace: purchasePlace,
                 imageURLs: imagePaths,
+                backgroundRemovedImageURL: bgRemovedPath,
                 tags: original.tags,
                 isActive: original.isActive
             )

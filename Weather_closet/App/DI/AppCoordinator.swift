@@ -7,6 +7,7 @@ final class AppCoordinator: ObservableObject {
     let homeViewModel: HomeViewModel
     let calendarViewModel: CalendarViewModel
     let closetViewModel: ClosetViewModel
+    let wishlistViewModel: WishlistViewModel
     let analysisViewModel: AnalysisViewModel
     let profileViewModel: ProfileViewModel
 
@@ -16,6 +17,7 @@ final class AppCoordinator: ObservableObject {
         homeViewModel = c.makeHomeViewModel()
         calendarViewModel = c.makeCalendarViewModel()
         closetViewModel = c.makeClosetViewModel()
+        wishlistViewModel = c.makeWishlistViewModel()
         analysisViewModel = c.makeAnalysisViewModel()
         profileViewModel = c.makeProfileViewModel()
     }
