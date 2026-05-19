@@ -195,14 +195,14 @@ struct SubCategoryFilterView: View {
 struct ClothingGridView: View {
     @EnvironmentObject var viewModel: ClosetViewModel
     let items: [ClothingEntity]
-    let columns = [GridItem(.adaptive(minimum: 160))]
+    let columns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
 
     @State private var itemToEdit: ClothingEntity?
     @State private var itemToDelete: ClothingEntity?
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
+            LazyVGrid(columns: columns, spacing: 10) {
                 ForEach(items) { item in
                     NavigationLink(destination: ClothingDetailView(clothing: item)) {
                         ClothingCard(clothing: item)
@@ -222,7 +222,7 @@ struct ClothingGridView: View {
                     }
                 }
             }
-            .padding()
+            .padding(16)
         }
         .alert("삭제", isPresented: Binding(
             get: { itemToDelete != nil },
@@ -254,23 +254,25 @@ struct ClothingCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Group {
-                if let path = clothing.imageURLs.first,
-                   let image = ImageStorageService.shared.load(path: path) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    Color.secondary.opacity(0.15)
-                        .overlay {
-                            Image(systemName: "tshirt")
-                                .font(.largeTitle)
-                                .foregroundStyle(.secondary)
-                        }
+            Color.clear
+                .aspectRatio(1, contentMode: .fit)
+                .overlay {
+                    if let path = clothing.imageURLs.first,
+                       let image = ImageStorageService.shared.load(path: path) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .clipped()
+                    } else {
+                        Color.secondary.opacity(0.15)
+                            .overlay {
+                                Image(systemName: "tshirt")
+                                    .font(.largeTitle)
+                                    .foregroundStyle(.secondary)
+                            }
+                    }
                 }
-            }
-            .aspectRatio(1, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(clothing.name)
