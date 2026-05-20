@@ -236,18 +236,15 @@ struct OutfitComposerView: View {
 
                 // 좌측 폰트 크기 슬라이더
                 HStack(spacing: 0) {
-                    Slider(value: $liveFontScale, in: 0.5...3.0)
-                        .frame(width: height * 0.55)
-                        .rotationEffect(.degrees(90))
-                        .frame(width: 30, height: height * 0.55)
-                        .tint(.white)
-                        .padding(.leading, 4)
+                    FontSizeNeedle(scale: $liveFontScale)
+                        .frame(width: 18, height: height * 0.72)
+                        .padding(.leading, 8)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 // 텍스트 입력 필드
-                TextField("텍스트 입력...", text: $liveEditText, axis: .vertical)
+                TextField("텍스트", text: $liveEditText, axis: .vertical)
                     .focused($textFieldFocused)
                     .font(.system(size: 28 * liveFontScale, weight: .semibold))
                     .foregroundStyle(textColorPalette[liveColorIndex])
@@ -255,7 +252,7 @@ struct OutfitComposerView: View {
                     .tint(.white)
                     .lineLimit(1...5)
                     .padding(.leading, 52)
-                    .padding(.trailing, 16)
+                    .padding(.trailing, 52)
             }
 
         }
@@ -918,6 +915,57 @@ struct ClothingPickerSheet: View {
         } else {
             Color.secondary.opacity(0.15)
                 .overlay { Image(systemName: "tshirt").foregroundStyle(.secondary) }
+        }
+    }
+}
+
+// MARK: - FontSizeNeedle
+
+private struct FontSizeNeedle: View {
+    @Binding var scale: CGFloat
+
+    private let minScale: CGFloat = 0.5
+    private let maxScale: CGFloat = 3.0
+    private let knobDiameter: CGFloat = 28
+
+    private func knobY(in height: CGFloat) -> CGFloat {
+        let t = (scale - minScale) / (maxScale - minScale)
+        // t=1 (max) → top, t=0 (min) → bottom
+        return height * (1 - t)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let h = geo.size.height
+            let w = geo.size.width
+            let ky = knobY(in: h)
+
+            ZStack {
+                // Isosceles triangle: wide at top, point at bottom-center
+                Path { p in
+                    p.move(to: CGPoint(x: 0, y: 0))
+                    p.addLine(to: CGPoint(x: w, y: 0))
+                    p.addLine(to: CGPoint(x: w / 2, y: h))
+                    p.closeSubpath()
+                }
+                .fill(Color.white.opacity(0.9))
+
+                // Draggable knob
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: knobDiameter, height: knobDiameter)
+                    .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
+                    .position(x: w / 2, y: ky)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let newT = 1 - value.location.y / h
+                        let clamped = min(max(newT, 0), 1)
+                        scale = minScale + clamped * (maxScale - minScale)
+                    }
+            )
         }
     }
 }
