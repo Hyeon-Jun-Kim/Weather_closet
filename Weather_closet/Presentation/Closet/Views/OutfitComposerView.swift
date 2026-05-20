@@ -1,12 +1,71 @@
 import SwiftUI
 
-// MARK: - Canvas Item Model
+// MARK: - UIKit Presentation Interceptor
+
+private struct PresentationInterceptor: UIViewControllerRepresentable {
+    let canDismiss: Bool
+    let onAttempt: () -> Void
+
+    func makeUIViewController(context: Context) -> UIViewController { UIViewController() }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
+        context.coordinator.canDismiss = canDismiss
+        context.coordinator.onAttempt = onAttempt
+        DispatchQueue.main.async {
+            var root: UIViewController? = uiViewController
+            while let parent = root?.parent { root = parent }
+            root?.presentationController?.delegate = context.coordinator
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, UIAdaptivePresentationControllerDelegate {
+        var canDismiss = true
+        var onAttempt: () -> Void = {}
+
+        func presentationControllerShouldDismiss(_ presentationController: UIPresentationController) -> Bool {
+            canDismiss
+        }
+
+        func presentationControllerDidAttemptToDismiss(_ presentationController: UIPresentationController) {
+            onAttempt()
+        }
+    }
+}
+
+// MARK: - Text Color Palette
+
+private let textColorPalette: [Color] = [
+    .black, .white,
+    Color(red: 0.95, green: 0.27, blue: 0.27),
+    Color(red: 1.00, green: 0.58, blue: 0.00),
+    Color(red: 1.00, green: 0.84, blue: 0.00),
+    Color(red: 0.18, green: 0.80, blue: 0.44),
+    Color(red: 0.20, green: 0.60, blue: 1.00),
+    Color(red: 0.56, green: 0.27, blue: 0.68),
+    Color(red: 1.00, green: 0.43, blue: 0.69),
+]
+
+// MARK: - Models
 
 struct OutfitCanvasItem: Identifiable {
     let id: UUID
     let clothing: ClothingEntity
     var offset: CGSize = .zero
     var scale: CGFloat = 0.35
+    var rotation: Angle = .zero
+}
+
+struct OutfitTextItem: Identifiable {
+    let id: UUID
+    var text: String
+    var colorIndex: Int = 0
+    var fontSize: CGFloat = 28
+    var offset: CGSize = .zero
+    var scale: CGFloat = 1.0
+    var rotation: Angle = .zero
+    var color: Color { textColorPalette[colorIndex] }
 }
 
 // MARK: - Outfit Composer View
@@ -16,40 +75,86 @@ struct OutfitComposerView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var items: [OutfitCanvasItem] = []
-    @State private var selectedID: UUID? = nil
+    @State private var textItems: [OutfitTextItem] = []
+    @State private var selectedTextID: UUID? = nil
     @State private var backgroundColor: Color = .white
     @State private var showPicker = false
 
+    // 드래그 삭제
+    @State private var draggingItemID: UUID? = nil
+    @State private var isOverDeleteZone = false
+
+    // 닫기 확인
+    @State private var showDiscardAlert = false
+
+    // 인라인 텍스트 편집
+    @State private var isTextEditing = false
+    @State private var editingTextID: UUID? = nil
+    @State private var liveEditText = ""
+    @State private var liveColorIndex = 0
+    @State private var liveFontScale: CGFloat = 1.0
+    @FocusState private var textFieldFocused: Bool
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                GeometryReader { geo in
-                    let canvasWidth = geo.size.width - 32
-                    let canvasHeight = canvasWidth * 4 / 3
-                    VStack(spacing: 0) {
-                        canvas(width: canvasWidth, height: canvasHeight)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 16)
-                        itemList
-                    }
+            mainContent
+                .background {
+                    PresentationInterceptor(
+                        canDismiss: items.isEmpty && textItems.isEmpty,
+                        onAttempt: { showDiscardAlert = true }
+                    )
                 }
-            }
-            .navigationTitle("조합 생성")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("닫기") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("저장") { dismiss() }
-                }
-            }
+                .navigationTitle(isTextEditing ? "" : "조합 생성")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { toolbarContent }
+        }
+        .confirmationDialog("저장하지 않고 나가시겠습니까?", isPresented: $showDiscardAlert, titleVisibility: .visible) {
+            Button("나가기", role: .destructive) { dismiss() }
+            Button("취소", role: .cancel) {}
         }
         .sheet(isPresented: $showPicker) {
             ClothingPickerSheet(clothingList: clothingList) { clothing in
                 let item = OutfitCanvasItem(id: UUID(), clothing: clothing)
                 items.insert(item, at: 0)
-                selectedID = item.id
+            }
+        }
+    }
+
+    // MARK: - Main Content / Toolbar
+
+    private var mainContent: some View {
+        VStack(spacing: 0) {
+            GeometryReader { geo in
+                let cw = geo.size.width - 32
+                let ch = geo.size.height - 32
+                canvas(width: cw, height: ch)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+            }
+            if isTextEditing { colorPaletteBar }
+        }
+        .overlay(alignment: .bottom) {
+            if draggingItemID != nil { deleteZoneOverlay }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            if isTextEditing {
+                Button("취소") { cancelTextEditing() }
+            } else {
+                Button("닫기") {
+                    if items.isEmpty && textItems.isEmpty { dismiss() }
+                    else { showDiscardAlert = true }
+                }
+            }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+            if isTextEditing {
+                Button("완료") { confirmTextEditing() }.fontWeight(.semibold)
+            } else {
+                Button("저장") { dismiss() }
             }
         }
     }
@@ -63,82 +168,211 @@ struct OutfitComposerView: View {
             ForEach(items.reversed()) { item in
                 CanvasClothingItem(
                     item: item,
-                    isSelected: selectedID == item.id,
                     canvasWidth: width,
-                    onSelect: { selectedID = item.id },
                     onUpdate: { updated in
                         if let idx = items.firstIndex(where: { $0.id == updated.id }) {
                             items[idx] = updated
                         }
+                        checkDeleteZone(offset: updated.offset, canvasHeight: height)
+                    },
+                    onDragStart: { id in draggingItemID = id },
+                    onDragEnd: { id in
+                        if isOverDeleteZone { items.removeAll { $0.id == id } }
+                        draggingItemID = nil
+                        isOverDeleteZone = false
                     }
                 )
             }
 
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    ColorPicker("", selection: $backgroundColor, supportsOpacity: false)
-                        .labelsHidden()
-                        .frame(width: 44, height: 44)
-                        .padding(10)
-                }
+            ForEach(textItems.reversed()) { text in
+                CanvasTextItem(
+                    item: text,
+                    isSelected: selectedTextID == text.id,
+                    onSelect: { selectedTextID = text.id },
+                    onUpdate: { updated in
+                        if let idx = textItems.firstIndex(where: { $0.id == updated.id }) {
+                            textItems[idx] = updated
+                        }
+                        checkDeleteZone(offset: updated.offset, canvasHeight: height)
+                    },
+                    onEdit: { startTextEditing(editingID: text.id) },
+                    onDragStart: { id in draggingItemID = id },
+                    onDragEnd: { id in
+                        if isOverDeleteZone {
+                            textItems.removeAll { $0.id == id }
+                            if selectedTextID == id { selectedTextID = nil }
+                        }
+                        draggingItemID = nil
+                        isOverDeleteZone = false
+                    }
+                )
             }
+
+            // 텍스트 편집 오버레이
+            if isTextEditing {
+                Color.black.opacity(0.5).allowsHitTesting(true)
+
+                // 좌측 폰트 크기 슬라이더
+                HStack(spacing: 0) {
+                    Slider(value: $liveFontScale, in: 0.5...3.0)
+                        .frame(width: height * 0.55)
+                        .rotationEffect(.degrees(90))
+                        .frame(width: 30, height: height * 0.55)
+                        .tint(.white)
+                        .padding(.leading, 4)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // 텍스트 입력 필드
+                TextField("텍스트 입력...", text: $liveEditText, axis: .vertical)
+                    .focused($textFieldFocused)
+                    .font(.system(size: 28 * liveFontScale, weight: .semibold))
+                    .foregroundStyle(textColorPalette[liveColorIndex])
+                    .multilineTextAlignment(.center)
+                    .tint(.white)
+                    .lineLimit(1...5)
+                    .padding(.leading, 52)
+                    .padding(.trailing, 16)
+            }
+
         }
         .frame(width: width, height: height)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
-        .onTapGesture { selectedID = nil }
-    }
-
-    // MARK: - Item List
-
-    private var itemList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Text("아이템")
-                    .font(.subheadline).fontWeight(.semibold)
-                Button {
-                    showPicker = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(Color.accentColor)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 6)
-
-            if items.isEmpty {
-                Text("+ 버튼으로 아이템을 추가하세요")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(16)
-            } else {
-                List {
-                    ForEach(items) { item in
-                        OutfitItemRow(item: item, isSelected: selectedID == item.id)
-                            .contentShape(Rectangle())
-                            .onTapGesture { selectedID = item.id }
-                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
+        .onTapGesture { if !isTextEditing { selectedTextID = nil } }
+        // clipShape 이후 overlay → 클리핑 없이 항상 최상단 표시
+        .overlay(alignment: .topTrailing) {
+            if !isTextEditing {
+                VStack(spacing: 8) {
+                    Button { startTextEditing(editingID: nil) } label: {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.black.opacity(0.45))
+                                .frame(width: 44, height: 30)
+                            Text("Aa")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(.white)
+                        }
                     }
-                    .onMove { src, dst in items.move(fromOffsets: src, toOffset: dst) }
-                    .onDelete { offsets in
-                        let removedIDs = offsets.map { items[$0].id }
-                        items.remove(atOffsets: offsets)
-                        if let sel = selectedID, removedIDs.contains(sel) { selectedID = nil }
+                    Button { showPicker = true } label: {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.black.opacity(0.45))
+                                .frame(width: 44, height: 44)
+                            Image(systemName: "photo.badge.plus")
+                                .font(.system(size: 18))
+                                .foregroundStyle(.white)
+                        }
                     }
                 }
-                .listStyle(.plain)
-                .environment(\.editMode, .constant(.active))
+                .padding(.top, 10)
+                .padding(.trailing, 10)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottomTrailing) {
+            if !isTextEditing {
+                ColorPicker("", selection: $backgroundColor, supportsOpacity: false)
+                    .labelsHidden()
+                    .frame(width: 44, height: 44)
+                    .padding(10)
+            }
+        }
+    }
+
+    // MARK: - Color Palette Bar
+
+    private var colorPaletteBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                ForEach(textColorPalette.indices, id: \.self) { i in
+                    Circle()
+                        .fill(textColorPalette[i])
+                        .frame(width: 30, height: 30)
+                        .overlay(
+                            Circle().stroke(Color(uiColor: .label), lineWidth: liveColorIndex == i ? 2.5 : 0)
+                        )
+                        .shadow(color: .black.opacity(0.3), radius: 1)
+                        .onTapGesture { liveColorIndex = i }
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 14)
+        }
+        .background(Color(uiColor: .systemBackground))
+    }
+
+    // MARK: - Delete Zone Overlay
+
+    private var deleteZoneOverlay: some View {
+        VStack(spacing: 8) {
+            Text("삭제하려면 끌어다 놓으세요")
+                .font(.caption)
+                .foregroundStyle(isOverDeleteZone ? Color.red : Color.red.opacity(0.7))
+            ZStack {
+                Circle()
+                    .fill(isOverDeleteZone ? Color.red : Color.red.opacity(0.7))
+                    .shadow(color: .red.opacity(0.4), radius: isOverDeleteZone ? 8 : 3)
+                Image(systemName: "trash")
+                    .font(.title2)
+                    .foregroundStyle(.white)
+            }
+            .frame(
+                width: isOverDeleteZone ? 62 : 50,
+                height: isOverDeleteZone ? 62 : 50
+            )
+            .animation(.easeInOut(duration: 0.15), value: isOverDeleteZone)
+        }
+        .padding(.bottom, 28)
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - Helpers
+
+    private func checkDeleteZone(offset: CGSize, canvasHeight: CGFloat) {
+        isOverDeleteZone = offset.height > (canvasHeight / 2 - 80)
+    }
+
+    private func startTextEditing(editingID: UUID?) {
+        if let id = editingID, let item = textItems.first(where: { $0.id == id }) {
+            editingTextID = id
+            liveEditText = item.text
+            liveColorIndex = item.colorIndex
+            liveFontScale = item.scale
+        } else {
+            editingTextID = nil
+            liveEditText = ""
+            liveColorIndex = 0
+            liveFontScale = 1.0
+        }
+        isTextEditing = true
+        textFieldFocused = true
+    }
+
+    private func confirmTextEditing() {
+        let t = liveEditText.trimmingCharacters(in: .whitespaces)
+        if !t.isEmpty {
+            if let id = editingTextID,
+               let idx = textItems.firstIndex(where: { $0.id == id }) {
+                textItems[idx].text = t
+                textItems[idx].colorIndex = liveColorIndex
+                textItems[idx].scale = liveFontScale
+            } else {
+                let item = OutfitTextItem(
+                    id: UUID(), text: t,
+                    colorIndex: liveColorIndex, scale: liveFontScale
+                )
+                textItems.insert(item, at: 0)
+                selectedTextID = item.id
+            }
+        }
+        cancelTextEditing()
+    }
+
+    private func cancelTextEditing() {
+        isTextEditing = false
+        editingTextID = nil
+        liveEditText = ""
+        textFieldFocused = false
     }
 }
 
@@ -146,27 +380,29 @@ struct OutfitComposerView: View {
 
 struct CanvasClothingItem: View {
     let item: OutfitCanvasItem
-    let isSelected: Bool
     let canvasWidth: CGFloat
-    let onSelect: () -> Void
     let onUpdate: (OutfitCanvasItem) -> Void
+    let onDragStart: (UUID) -> Void
+    let onDragEnd: (UUID) -> Void
 
-    @GestureState private var dragDelta: CGSize = .zero
+    // 로컬 커밋 상태 — item prop 갱신 타이밍 차이로 인한 stale 캡처 방지
+    @State private var currentOffset: CGSize = .zero
+    @State private var currentScale: CGFloat = 0.35
+    @State private var currentRotation: Angle = .zero
+    @State private var dragStart: CGSize?
     @GestureState private var magnifyDelta: CGFloat = 1.0
+    @GestureState private var rotationDelta: Angle = .zero
 
     private var image: UIImage? {
         if let bgPath = item.clothing.backgroundRemovedImageURL,
-           let img = ImageStorageService.shared.load(path: bgPath) {
-            return img
-        }
+           let img = ImageStorageService.shared.load(path: bgPath) { return img }
         return item.clothing.imageURLs.first.flatMap { ImageStorageService.shared.load(path: $0) }
     }
 
-    private var displayScale: CGFloat { item.scale * magnifyDelta }
-    private var frameSize: CGFloat { canvasWidth * displayScale }
+    private var frameSize: CGFloat { canvasWidth * currentScale * magnifyDelta }
 
     var body: some View {
-        ZStack {
+        Group {
             if let img = image {
                 Image(uiImage: img)
                     .resizable()
@@ -178,110 +414,157 @@ struct CanvasClothingItem: View {
                     .frame(width: frameSize, height: frameSize)
                     .overlay { Image(systemName: "tshirt").foregroundStyle(.secondary) }
             }
-
-            if isSelected { SelectionHandleOverlay(size: frameSize) }
         }
-        .offset(x: item.offset.width + dragDelta.width, y: item.offset.height + dragDelta.height)
+        .rotationEffect(currentRotation + rotationDelta)
+        .offset(x: currentOffset.width, y: currentOffset.height)
         .gesture(
             SimultaneousGesture(
                 DragGesture(minimumDistance: 2)
-                    .updating($dragDelta) { val, state, _ in state = val.translation }
-                    .onChanged { _ in onSelect() }
-                    .onEnded { val in
-                        var updated = item
-                        updated.offset = CGSize(
-                            width: item.offset.width + val.translation.width,
-                            height: item.offset.height + val.translation.height
+                    .onChanged { val in
+                        if dragStart == nil {
+                            dragStart = currentOffset
+                            onDragStart(item.id)
+                        }
+                        guard let s = dragStart else { return }
+                        let newOffset = CGSize(
+                            width: s.width + val.translation.width,
+                            height: s.height + val.translation.height
                         )
-                        onUpdate(updated)
-                    },
-                MagnificationGesture()
-                    .updating($magnifyDelta) { val, state, _ in state = val }
-                    .onChanged { _ in onSelect() }
-                    .onEnded { val in
+                        currentOffset = newOffset
                         var updated = item
-                        updated.scale = min(1.5, max(0.1, item.scale * val))
+                        updated.offset = newOffset
+                        updated.scale = currentScale
+                        updated.rotation = currentRotation
                         onUpdate(updated)
                     }
+                    .onEnded { _ in
+                        dragStart = nil
+                        onDragEnd(item.id)
+                    },
+                SimultaneousGesture(
+                    MagnificationGesture()
+                        .updating($magnifyDelta) { val, state, _ in state = val }
+                        .onEnded { val in
+                            let newScale = min(3.0, max(0.05, currentScale * val))
+                            currentScale = newScale
+                            var updated = item
+                            updated.offset = currentOffset
+                            updated.scale = newScale
+                            updated.rotation = currentRotation
+                            onUpdate(updated)
+                        },
+                    RotationGesture()
+                        .updating($rotationDelta) { val, state, _ in state = val }
+                        .onEnded { val in
+                            let newRotation = currentRotation + val
+                            currentRotation = newRotation
+                            var updated = item
+                            updated.offset = currentOffset
+                            updated.scale = currentScale
+                            updated.rotation = newRotation
+                            onUpdate(updated)
+                        }
+                )
             )
         )
-        .onTapGesture { onSelect() }
-    }
-}
-
-// MARK: - Selection Handle Overlay
-
-struct SelectionHandleOverlay: View {
-    let size: CGFloat
-    private let handleSize: CGFloat = 9
-    private let handles: [(CGFloat, CGFloat)] = [
-        (-0.5, -0.5), (0, -0.5), (0.5, -0.5),
-        (-0.5,  0  ),             (0.5,  0  ),
-        (-0.5,  0.5), (0,  0.5), (0.5,  0.5)
-    ]
-
-    var body: some View {
-        ZStack {
-            Rectangle()
-                .stroke(Color.accentColor, lineWidth: 1.5)
-                .frame(width: size, height: size)
-            ForEach(Array(handles.enumerated()), id: \.offset) { _, pos in
-                ZStack {
-                    Rectangle().fill(Color.white)
-                    Rectangle().stroke(Color.accentColor, lineWidth: 1)
-                }
-                .frame(width: handleSize, height: handleSize)
-                .offset(x: pos.0 * size, y: pos.1 * size)
-            }
+        .onAppear {
+            currentOffset = item.offset
+            currentScale = item.scale
+            currentRotation = item.rotation
         }
     }
 }
 
-// MARK: - Item Row
+// MARK: - Canvas Text Item
 
-struct OutfitItemRow: View {
-    let item: OutfitCanvasItem
+struct CanvasTextItem: View {
+    let item: OutfitTextItem
     let isSelected: Bool
+    let onSelect: () -> Void
+    let onUpdate: (OutfitTextItem) -> Void
+    let onEdit: () -> Void
+    let onDragStart: (UUID) -> Void
+    let onDragEnd: (UUID) -> Void
 
-    private var displayImage: UIImage? {
-        if let bgPath = item.clothing.backgroundRemovedImageURL,
-           let img = ImageStorageService.shared.load(path: bgPath) { return img }
-        return item.clothing.imageURLs.first.flatMap { ImageStorageService.shared.load(path: $0) }
-    }
+    @State private var currentOffset: CGSize = .zero
+    @State private var currentScale: CGFloat = 1.0
+    @State private var currentRotation: Angle = .zero
+    @State private var dragStart: CGSize?
+    @GestureState private var magnifyDelta: CGFloat = 1.0
+    @GestureState private var rotationDelta: Angle = .zero
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text(item.clothing.category.rawValue)
-                .font(.caption2).foregroundStyle(.white)
-                .padding(.horizontal, 6).padding(.vertical, 3)
-                .background(Color.secondary.opacity(0.6), in: Capsule())
-                .lineLimit(1).fixedSize()
-
-            Group {
-                if let img = displayImage {
-                    Image(uiImage: img).resizable().scaledToFit()
-                } else {
-                    Color.secondary.opacity(0.15)
-                        .overlay { Image(systemName: "tshirt").foregroundStyle(.secondary) }
+        Text(item.text)
+            .font(.system(size: item.fontSize * currentScale * magnifyDelta, weight: .semibold))
+            .foregroundStyle(item.color)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .overlay {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.accentColor.opacity(0.7), lineWidth: 1.5)
                 }
             }
-            .frame(width: 48, height: 48)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.clothing.name.isEmpty ? "이름 없음" : item.clothing.name)
-                    .font(.subheadline).lineLimit(1)
-                if !item.clothing.brand.isEmpty {
-                    Text(item.clothing.brand).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
+            .rotationEffect(currentRotation + rotationDelta)
+            .offset(x: currentOffset.width, y: currentOffset.height)
+            .gesture(
+                SimultaneousGesture(
+                    DragGesture(minimumDistance: 2)
+                        .onChanged { val in
+                            if dragStart == nil {
+                                dragStart = currentOffset
+                                onDragStart(item.id)
+                            }
+                            guard let s = dragStart else { return }
+                            onSelect()
+                            let newOffset = CGSize(
+                                width: s.width + val.translation.width,
+                                height: s.height + val.translation.height
+                            )
+                            currentOffset = newOffset
+                            var updated = item
+                            updated.offset = newOffset
+                            updated.scale = currentScale
+                            updated.rotation = currentRotation
+                            onUpdate(updated)
+                        }
+                        .onEnded { _ in
+                            dragStart = nil
+                            onDragEnd(item.id)
+                        },
+                    SimultaneousGesture(
+                        MagnificationGesture()
+                            .updating($magnifyDelta) { val, state, _ in state = val }
+                            .onEnded { val in
+                                let newScale = min(4.0, max(0.2, currentScale * val))
+                                currentScale = newScale
+                                var updated = item
+                                updated.offset = currentOffset
+                                updated.scale = newScale
+                                updated.rotation = currentRotation
+                                onUpdate(updated)
+                            },
+                        RotationGesture()
+                            .updating($rotationDelta) { val, state, _ in state = val }
+                            .onEnded { val in
+                                let newRotation = currentRotation + val
+                                currentRotation = newRotation
+                                var updated = item
+                                updated.offset = currentOffset
+                                updated.scale = currentScale
+                                updated.rotation = newRotation
+                                onUpdate(updated)
+                            }
+                    )
+                )
+            )
+            .onTapGesture { onSelect() }
+            .simultaneousGesture(TapGesture(count: 2).onEnded { onEdit() })
+            .onAppear {
+                currentOffset = item.offset
+                currentScale = item.scale
+                currentRotation = item.rotation
             }
-            Spacer()
-        }
-        .padding(10)
-        .background(
-            isSelected ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.08),
-            in: RoundedRectangle(cornerRadius: 10)
-        )
     }
 }
 

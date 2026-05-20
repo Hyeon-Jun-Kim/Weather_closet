@@ -107,8 +107,8 @@ struct OutfitListPlaceholderView: View {
     var body: some View {
         ContentUnavailableView(
             "저장된 조합 없음",
-            systemImage: "person.crop.rectangle.stack",
-            description: Text("+ 버튼으로 코디를 구성해보세요.")
+            systemImage: "rectangle.stack",
+            description: Text("+ 버튼으로 조합을 구성해보세요.")
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
