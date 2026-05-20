@@ -352,7 +352,16 @@ struct OutfitComposerView: View {
         let cw = canvasSize.width
         let ch = canvasSize.height
         if cw > 0 && ch > 0 {
-            let rendered = canvas(width: cw, height: ch, showOverlays: false)
+            let snapshot = items
+            let snapshotText = textItems
+            let bg = backgroundColor
+            let rendered = ThumbnailCanvasView(
+                items: snapshot,
+                textItems: snapshotText,
+                backgroundColor: bg,
+                width: cw,
+                height: ch
+            )
             let renderer = ImageRenderer(content: rendered)
             renderer.scale = UIScreen.main.scale
             if let img = renderer.uiImage {
@@ -424,6 +433,65 @@ struct OutfitComposerView: View {
         editingTextID = nil
         liveEditText = ""
         textFieldFocused = false
+    }
+}
+
+// MARK: - Static Thumbnail Canvas (for ImageRenderer — no @State, no interactive controls)
+
+private struct ThumbnailCanvasView: View {
+    let items: [OutfitCanvasItem]
+    let textItems: [OutfitTextItem]
+    let backgroundColor: Color
+    let width: CGFloat
+    let height: CGFloat
+
+    var body: some View {
+        ZStack {
+            backgroundColor
+            ForEach(items.reversed()) { item in
+                ThumbnailClothingItem(item: item, canvasWidth: width)
+            }
+            ForEach(textItems.reversed()) { text in
+                Text(text.text)
+                    .font(.system(size: text.fontSize * text.scale, weight: .semibold))
+                    .foregroundStyle(text.color)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8).padding(.vertical, 6)
+                    .rotationEffect(text.rotation)
+                    .offset(x: text.offset.width, y: text.offset.height)
+            }
+        }
+        .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct ThumbnailClothingItem: View {
+    let item: OutfitCanvasItem
+    let canvasWidth: CGFloat
+
+    private var image: UIImage? {
+        if let bgPath = item.clothing.backgroundRemovedImageURL,
+           let img = ImageStorageService.shared.load(path: bgPath) { return img }
+        return item.clothing.imageURLs.first.flatMap { ImageStorageService.shared.load(path: $0) }
+    }
+
+    var body: some View {
+        let frameSize = canvasWidth * item.scale
+        Group {
+            if let img = image {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: frameSize, height: frameSize)
+            } else {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(width: frameSize, height: frameSize)
+            }
+        }
+        .rotationEffect(item.rotation)
+        .offset(x: item.offset.width, y: item.offset.height)
     }
 }
 
