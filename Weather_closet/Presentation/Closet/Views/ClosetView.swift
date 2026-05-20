@@ -110,6 +110,7 @@ struct ClosetView: View {
 
 struct OutfitListView: View {
     @EnvironmentObject var viewModel: ClosetViewModel
+    @State private var viewingOutfit: OutfitEntity? = nil
     @State private var editingOutfit: OutfitEntity? = nil
     @State private var deletingOutfit: OutfitEntity? = nil
     @State private var showDeleteAlert = false
@@ -130,6 +131,7 @@ struct OutfitListView: View {
                     LazyVGrid(columns: columns, spacing: 10) {
                         ForEach(viewModel.outfits.sorted { $0.createdAt > $1.createdAt }) { outfit in
                             OutfitGridCell(outfit: outfit, clothingList: viewModel.clothingList)
+                                .onTapGesture { viewingOutfit = outfit }
                                 .contextMenu {
                                     Button {
                                         editingOutfit = outfit
@@ -149,6 +151,14 @@ struct OutfitListView: View {
                 }
             }
         }
+        .sheet(item: $viewingOutfit) { outfit in
+            OutfitDetailView(
+                outfit: outfit,
+                clothingList: viewModel.clothingList,
+                onEdit: { editingOutfit = outfit }
+            )
+            .environmentObject(viewModel)
+        }
         .sheet(item: $editingOutfit) { outfit in
             OutfitComposerView(clothingList: viewModel.clothingList, editingOutfit: outfit)
                 .environmentObject(viewModel)
@@ -167,6 +177,96 @@ struct OutfitListView: View {
     }
 }
 
+struct OutfitDetailView: View {
+    let outfit: OutfitEntity
+    let clothingList: [ClothingEntity]
+    let onEdit: () -> Void
+    @EnvironmentObject var viewModel: ClosetViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    private var previewImage: UIImage? {
+        guard let path = outfit.imageURL else { return nil }
+        return ImageStorageService.shared.load(path: path)
+    }
+
+    private var canvasItems: [OutfitCanvasItem] {
+        let clothingByID: [UUID: ClothingEntity] = Dictionary(uniqueKeysWithValues: clothingList.map { ($0.id, $0) })
+        return outfit.canvasStates.compactMap { state -> OutfitCanvasItem? in
+            guard let clothing = clothingByID[state.clothingID] else { return nil }
+            return OutfitCanvasItem(
+                id: UUID(),
+                clothing: clothing,
+                offset: CGSize(width: state.offsetX, height: state.offsetY),
+                scale: state.scale,
+                rotation: Angle(radians: state.rotationRadians)
+            )
+        }
+    }
+
+    private var canvasTextItems: [OutfitTextItem] {
+        outfit.textStates.map { state in
+            OutfitTextItem(
+                id: UUID(),
+                text: state.text,
+                colorIndex: state.colorIndex,
+                fontSize: state.fontSize,
+                offset: CGSize(width: state.offsetX, height: state.offsetY),
+                scale: state.scale,
+                rotation: Angle(radians: state.rotationRadians)
+            )
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            GeometryReader { geo in
+                let cw = geo.size.width - 32
+                let ch = geo.size.height - 32
+                canvasContent(width: cw, height: ch)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .frame(width: cw, height: ch)
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+            }
+            .padding(16)
+            .navigationTitle(outfit.name.isEmpty ? "조합" : outfit.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("닫기") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("수정") {
+                        dismiss()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            onEdit()
+                        }
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func canvasContent(width: CGFloat, height: CGFloat) -> some View {
+        if !canvasItems.isEmpty || !canvasTextItems.isEmpty {
+            ThumbnailCanvasView(
+                items: canvasItems,
+                textItems: canvasTextItems,
+                backgroundColor: .white,
+                width: width,
+                height: height
+            )
+        } else if let img = previewImage {
+            Image(uiImage: img)
+                .resizable()
+                .scaledToFill()
+        } else {
+            Color.secondary.opacity(0.1)
+        }
+    }
+}
+
 struct OutfitGridCell: View {
     let outfit: OutfitEntity
     let clothingList: [ClothingEntity]
@@ -181,23 +281,32 @@ struct OutfitGridCell: View {
     }
 
     var body: some View {
-        Color.clear
-            .aspectRatio(3/4, contentMode: .fit)
-            .overlay {
-                if let img = previewImage {
-                    Image(uiImage: img)
-                        .resizable()
-                        .scaledToFill()
-                        .clipped()
-                } else {
-                    thumbnailGrid
+        VStack(alignment: .leading, spacing: 8) {
+            Color.clear
+                .aspectRatio(3/4, contentMode: .fit)
+                .overlay {
+                    if let img = previewImage {
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFill()
+                            .clipped()
+                    } else {
+                        thumbnailGrid
+                    }
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+                )
+
+            if !outfit.name.isEmpty {
+                Text(outfit.name)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
-            )
+        }
     }
 
     @ViewBuilder

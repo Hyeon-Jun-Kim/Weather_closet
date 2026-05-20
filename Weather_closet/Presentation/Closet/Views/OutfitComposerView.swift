@@ -77,6 +77,7 @@ struct OutfitComposerView: View {
     @EnvironmentObject var viewModel: ClosetViewModel
     @Environment(\.dismiss) private var dismiss
 
+    @State private var outfitTitle: String = ""
     @State private var items: [OutfitCanvasItem] = []
     @State private var textItems: [OutfitTextItem] = []
     @State private var selectedTextID: UUID? = nil
@@ -108,7 +109,6 @@ struct OutfitComposerView: View {
                         onAttempt: { showDiscardAlert = true }
                     )
                 }
-                .navigationTitle(isTextEditing ? "" : (editingOutfit == nil ? "조합 생성" : "조합 수정"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
                 .onAppear { loadEditingOutfitIfNeeded() }
@@ -147,6 +147,17 @@ struct OutfitComposerView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            if !isTextEditing {
+                TextField(
+                    editingOutfit == nil ? "조합 생성" : "조합 수정",
+                    text: $outfitTitle
+                )
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 180)
+            }
+        }
         ToolbarItem(placement: .cancellationAction) {
             if isTextEditing {
                 Button("취소") { cancelTextEditing() }
@@ -341,6 +352,7 @@ struct OutfitComposerView: View {
 
     private func loadEditingOutfitIfNeeded() {
         guard let existing = editingOutfit, items.isEmpty else { return }
+        outfitTitle = existing.name
         let clothingByID = Dictionary(uniqueKeysWithValues: clothingList.map { ($0.id, $0) })
 
         if !existing.canvasStates.isEmpty {
@@ -416,6 +428,7 @@ struct OutfitComposerView: View {
 
         if let existing = editingOutfit {
             var updated = existing
+            updated.name = outfitTitle
             updated.clothingIDs = items.map { $0.clothing.id }
             updated.canvasStates = canvasStates
             updated.textStates = savedTextStates
@@ -424,7 +437,7 @@ struct OutfitComposerView: View {
         } else {
             let outfit = OutfitEntity(
                 id: UUID(),
-                name: "",
+                name: outfitTitle,
                 clothingIDs: items.map { $0.clothing.id },
                 canvasStates: canvasStates,
                 textStates: savedTextStates,
@@ -488,7 +501,7 @@ struct OutfitComposerView: View {
 
 // MARK: - Static Thumbnail Canvas (for ImageRenderer — no @State, no interactive controls)
 
-private struct ThumbnailCanvasView: View {
+struct ThumbnailCanvasView: View {
     let items: [OutfitCanvasItem]
     let textItems: [OutfitTextItem]
     let backgroundColor: Color
@@ -516,7 +529,7 @@ private struct ThumbnailCanvasView: View {
     }
 }
 
-private struct ThumbnailClothingItem: View {
+struct ThumbnailClothingItem: View {
     let item: OutfitCanvasItem
     let canvasWidth: CGFloat
 
