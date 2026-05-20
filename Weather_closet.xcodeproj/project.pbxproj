@@ -59,6 +59,10 @@
 		A7D02057492880A8FD6CDA35 /* UpdateClothingUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44191F1702E18A519FF83693 /* UpdateClothingUseCase.swift */; };
 		AEACA767B71B711D16AD5539 /* AnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0043A574DDCC8FAFA961001 /* AnalysisView.swift */; };
 		B108E2C714D610A7C4A7C915 /* HomeViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDE1D11B6343DA4D264FA18B /* HomeViewModel.swift */; };
+		AA001111000111AA00011100 /* AddOutfitUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA001111000111AA00011101 /* AddOutfitUseCase.swift */; };
+		AA001111000111AA00011102 /* GetOutfitListUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA001111000111AA00011103 /* GetOutfitListUseCase.swift */; };
+		BB002222000222BB00022200 /* DeleteOutfitUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB002222000222BB00022201 /* DeleteOutfitUseCase.swift */; };
+		BB002222000222BB00022202 /* UpdateOutfitUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB002222000222BB00022203 /* UpdateOutfitUseCase.swift */; };
 		B22CA19B51CF628B35B65B83 /* AddClothingUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F7BF414B95E971F557C38EC /* AddClothingUseCase.swift */; };
 		B6CFDAFC580AAA3B6CC1FB42 /* CalendarViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDA585409509F13F0DF6376D /* CalendarViewModel.swift */; };
 		BBCA295AC803402DC0701B9E /* LocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B06C1A409676577A712B353 /* LocationService.swift */; };
@@ -122,6 +126,10 @@
 		4799C2C31F4F07B914CEF518 /* UserRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserRepository.swift; sourceTree = "<group>"; };
 		4C7654EBB2F9D315ACF63199 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		4E5B093E4F2D79801088635A /* WishlistItemEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WishlistItemEntity.swift; sourceTree = "<group>"; };
+		AA001111000111AA00011101 /* AddOutfitUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddOutfitUseCase.swift; sourceTree = "<group>"; };
+		AA001111000111AA00011103 /* GetOutfitListUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GetOutfitListUseCase.swift; sourceTree = "<group>"; };
+		BB002222000222BB00022201 /* DeleteOutfitUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeleteOutfitUseCase.swift; sourceTree = "<group>"; };
+		BB002222000222BB00022203 /* UpdateOutfitUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateOutfitUseCase.swift; sourceTree = "<group>"; };
 		4F7BF414B95E971F557C38EC /* AddClothingUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddClothingUseCase.swift; sourceTree = "<group>"; };
 		517CE6ED807C225D1F1DD03B /* ProfileViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileViewModel.swift; sourceTree = "<group>"; };
 		53DDB01611802490C896AFCA /* WishlistViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WishlistViewModel.swift; sourceTree = "<group>"; };
@@ -615,12 +623,16 @@
 			isa = PBXGroup;
 			children = (
 				4F7BF414B95E971F557C38EC /* AddClothingUseCase.swift */,
+				AA001111000111AA00011101 /* AddOutfitUseCase.swift */,
 				73591DBF2C68612E49C30126 /* AddWishlistItemUseCase.swift */,
 				465277C663F842621D96835B /* DeleteClothingUseCase.swift */,
+				BB002222000222BB00022201 /* DeleteOutfitUseCase.swift */,
 				2F8FC3B8ABC041751A0831B7 /* DeleteWishlistItemUseCase.swift */,
+				AA001111000111AA00011103 /* GetOutfitListUseCase.swift */,
 				ADCA623BE9E9D7D335B07A87 /* GetClothingListUseCase.swift */,
 				02E2DCE8C9866124BDD994FE /* GetWishlistUseCase.swift */,
 				44191F1702E18A519FF83693 /* UpdateClothingUseCase.swift */,
+				BB002222000222BB00022203 /* UpdateOutfitUseCase.swift */,
 				1CE45D358EDA065C6F656349 /* UpdateWishlistItemUseCase.swift */,
 			);
 			path = Closet;
@@ -781,6 +793,10 @@
 			files = (
 				749F93FB338F82BB6499BE93 /* APIClient.swift in Sources */,
 				B22CA19B51CF628B35B65B83 /* AddClothingUseCase.swift in Sources */,
+				AA001111000111AA00011100 /* AddOutfitUseCase.swift in Sources */,
+				AA001111000111AA00011102 /* GetOutfitListUseCase.swift in Sources */,
+				BB002222000222BB00022200 /* DeleteOutfitUseCase.swift in Sources */,
+				BB002222000222BB00022202 /* UpdateOutfitUseCase.swift in Sources */,
 				3A2C2A286158A4A5350F7252 /* AddWishlistItemUseCase.swift in Sources */,
 				AEACA767B71B711D16AD5539 /* AnalysisView.swift in Sources */,
 				DBFF59D9EEE25CE128515D6A /* AnalysisViewModel.swift in Sources */,

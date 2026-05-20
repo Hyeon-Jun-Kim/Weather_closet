@@ -9,5 +9,6 @@ protocol ClosetRepositoryProtocol {
     func delete(id: UUID) async throws
     func fetchOutfits() async throws -> [OutfitEntity]
     func saveOutfit(_ outfit: OutfitEntity) async throws
+    func updateOutfit(_ outfit: OutfitEntity) async throws
     func deleteOutfit(id: UUID) async throws
 }

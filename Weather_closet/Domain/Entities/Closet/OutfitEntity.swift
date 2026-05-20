@@ -7,4 +7,5 @@ struct OutfitEntity: Identifiable {
     var tags: [String]
     var note: String
     var createdAt: Date
+    var imageURL: String?
 }

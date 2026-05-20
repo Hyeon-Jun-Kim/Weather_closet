@@ -36,7 +36,8 @@ struct ClosetView: View {
                             .environmentObject(wishlistViewModel)
                             .tag(ClosetMainTab.wishlist)
 
-                        OutfitListPlaceholderView()
+                        OutfitListView()
+                            .environmentObject(viewModel)
                             .tag(ClosetMainTab.outfit)
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
@@ -60,13 +61,17 @@ struct ClosetView: View {
             }
             .animation(.easeInOut(duration: 0.2), value: selectedTab)
             .navigationBarTitleDisplayMode(.inline)
-            .task { await viewModel.loadClothing() }
+            .task {
+                await viewModel.loadClothing()
+                await viewModel.loadOutfits()
+            }
             .sheet(isPresented: $showAddSheet) {
                 AddClothingView()
                     .environmentObject(viewModel)
             }
             .sheet(isPresented: $showAddOutfitSheet) {
                 OutfitComposerView(clothingList: viewModel.clothingList)
+                    .environmentObject(viewModel)
             }
         }
     }
@@ -101,16 +106,116 @@ struct ClosetView: View {
     }
 }
 
-// MARK: - Outfit List Placeholder
+// MARK: - Outfit List
 
-struct OutfitListPlaceholderView: View {
+struct OutfitListView: View {
+    @EnvironmentObject var viewModel: ClosetViewModel
+    @State private var editingOutfit: OutfitEntity? = nil
+    @State private var deletingOutfit: OutfitEntity? = nil
+    @State private var showDeleteAlert = false
+
+    private let columns = [GridItem(.flexible()), GridItem(.flexible())]
+
     var body: some View {
-        ContentUnavailableView(
-            "저장된 조합 없음",
-            systemImage: "rectangle.stack",
-            description: Text("+ 버튼으로 조합을 구성해보세요.")
+        Group {
+            if viewModel.outfits.isEmpty {
+                ContentUnavailableView(
+                    "저장된 조합 없음",
+                    systemImage: "rectangle.stack",
+                    description: Text("+ 버튼으로 조합을 구성해보세요.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(viewModel.outfits.sorted { $0.createdAt > $1.createdAt }) { outfit in
+                            OutfitGridCell(outfit: outfit, clothingList: viewModel.clothingList)
+                                .contextMenu {
+                                    Button {
+                                        editingOutfit = outfit
+                                    } label: {
+                                        Label("수정", systemImage: "pencil")
+                                    }
+                                    Button(role: .destructive) {
+                                        deletingOutfit = outfit
+                                        showDeleteAlert = true
+                                    } label: {
+                                        Label("삭제", systemImage: "trash")
+                                    }
+                                }
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+        }
+        .sheet(item: $editingOutfit) { outfit in
+            OutfitComposerView(clothingList: viewModel.clothingList, editingOutfit: outfit)
+                .environmentObject(viewModel)
+        }
+        .confirmationDialog(
+            "이 조합을 삭제하시겠습니까?",
+            isPresented: $showDeleteAlert,
+            titleVisibility: .visible
+        ) {
+            Button("삭제", role: .destructive) {
+                guard let outfit = deletingOutfit else { return }
+                Task { await viewModel.deleteOutfit(id: outfit.id) }
+            }
+            Button("취소", role: .cancel) {}
+        }
+    }
+}
+
+struct OutfitGridCell: View {
+    let outfit: OutfitEntity
+    let clothingList: [ClothingEntity]
+
+    private var previewImage: UIImage? {
+        guard let path = outfit.imageURL else { return nil }
+        return ImageStorageService.shared.load(path: path)
+    }
+
+    private var clothingItems: [ClothingEntity] {
+        outfit.clothingIDs.compactMap { id in clothingList.first { $0.id == id } }
+    }
+
+    var body: some View {
+        Group {
+            if let img = previewImage {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                thumbnailGrid
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .aspectRatio(3/4, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
         )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var thumbnailGrid: some View {
+        let items = Array(clothingItems.prefix(4))
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 2) {
+            ForEach(items) { clothing in
+                if let path = clothing.imageURLs.first,
+                   let img = ImageStorageService.shared.load(path: path) {
+                    Image(uiImage: img).resizable().scaledToFill()
+                        .frame(maxWidth: .infinity).aspectRatio(1, contentMode: .fit)
+                        .clipped()
+                } else {
+                    Color.secondary.opacity(0.1)
+                        .aspectRatio(1, contentMode: .fit)
+                }
+            }
+        }
+        .background(Color.secondary.opacity(0.05))
     }
 }
 

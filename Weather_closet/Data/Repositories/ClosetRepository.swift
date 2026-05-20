@@ -36,6 +36,10 @@ final class ClosetRepository: ClosetRepositoryProtocol {
         try await localDataSource.saveOutfit(outfit)
     }
 
+    func updateOutfit(_ outfit: OutfitEntity) async throws {
+        try await localDataSource.updateOutfit(outfit)
+    }
+
     func deleteOutfit(id: UUID) async throws {
         try await localDataSource.deleteOutfit(id: id)
     }

@@ -66,6 +66,17 @@ final class ClosetLocalDataSource {
         try context.save()
     }
 
+    func updateOutfit(_ outfit: OutfitEntity) async throws {
+        let context = persistence.modelContext
+        let outfitID = outfit.id
+        let descriptor = FetchDescriptor<OutfitModel>(
+            predicate: #Predicate { $0.id == outfitID }
+        )
+        guard let model = try context.fetch(descriptor).first else { return }
+        model.update(from: outfit)
+        try context.save()
+    }
+
     func deleteOutfit(id: UUID) async throws {
         let context = persistence.modelContext
         let descriptor = FetchDescriptor<OutfitModel>(

@@ -134,6 +134,7 @@ final class OutfitModel {
     var tags: [String]
     var note: String
     var createdAt: Date
+    var imageURL: String?
 
     init(entity: OutfitEntity) {
         self.id = entity.id
@@ -142,9 +143,18 @@ final class OutfitModel {
         self.tags = entity.tags
         self.note = entity.note
         self.createdAt = entity.createdAt
+        self.imageURL = entity.imageURL
+    }
+
+    func update(from entity: OutfitEntity) {
+        name = entity.name
+        clothingIDs = entity.clothingIDs
+        tags = entity.tags
+        note = entity.note
+        imageURL = entity.imageURL
     }
 
     func toEntity() -> OutfitEntity {
-        OutfitEntity(id: id, name: name, clothingIDs: clothingIDs, tags: tags, note: note, createdAt: createdAt)
+        OutfitEntity(id: id, name: name, clothingIDs: clothingIDs, tags: tags, note: note, createdAt: createdAt, imageURL: imageURL)
     }
 }

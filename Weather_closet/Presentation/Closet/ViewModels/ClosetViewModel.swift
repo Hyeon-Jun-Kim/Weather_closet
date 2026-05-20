@@ -14,17 +14,29 @@ final class ClosetViewModel: ObservableObject {
     private let getClothingListUseCase: GetClothingListUseCase
     private let deleteClothingUseCase: DeleteClothingUseCase
     private let updateClothingUseCase: UpdateClothingUseCase
+    private let addOutfitUseCase: AddOutfitUseCase
+    private let getOutfitListUseCase: GetOutfitListUseCase
+    private let updateOutfitUseCase: UpdateOutfitUseCase
+    private let deleteOutfitUseCase: DeleteOutfitUseCase
 
     init(
         addClothingUseCase: AddClothingUseCase,
         getClothingListUseCase: GetClothingListUseCase,
         deleteClothingUseCase: DeleteClothingUseCase,
-        updateClothingUseCase: UpdateClothingUseCase
+        updateClothingUseCase: UpdateClothingUseCase,
+        addOutfitUseCase: AddOutfitUseCase,
+        getOutfitListUseCase: GetOutfitListUseCase,
+        updateOutfitUseCase: UpdateOutfitUseCase,
+        deleteOutfitUseCase: DeleteOutfitUseCase
     ) {
         self.addClothingUseCase = addClothingUseCase
         self.getClothingListUseCase = getClothingListUseCase
         self.deleteClothingUseCase = deleteClothingUseCase
         self.updateClothingUseCase = updateClothingUseCase
+        self.addOutfitUseCase = addOutfitUseCase
+        self.getOutfitListUseCase = getOutfitListUseCase
+        self.updateOutfitUseCase = updateOutfitUseCase
+        self.deleteOutfitUseCase = deleteOutfitUseCase
     }
 
     var filteredList: [ClothingEntity] {
@@ -84,6 +96,41 @@ final class ClosetViewModel: ObservableObject {
         do {
             try await updateClothingUseCase.execute(clothing)
             await loadClothing()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func loadOutfits() async {
+        do {
+            outfits = try await getOutfitListUseCase.execute()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func saveOutfit(_ outfit: OutfitEntity) async {
+        do {
+            try await addOutfitUseCase.execute(outfit)
+            await loadOutfits()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func updateOutfit(_ outfit: OutfitEntity) async {
+        do {
+            try await updateOutfitUseCase.execute(outfit)
+            await loadOutfits()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteOutfit(id: UUID) async {
+        do {
+            try await deleteOutfitUseCase.execute(id: id)
+            await loadOutfits()
         } catch {
             errorMessage = error.localizedDescription
         }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - UIKit Presentation Interceptor
 
@@ -72,6 +73,8 @@ struct OutfitTextItem: Identifiable {
 
 struct OutfitComposerView: View {
     let clothingList: [ClothingEntity]
+    var editingOutfit: OutfitEntity? = nil
+    @EnvironmentObject var viewModel: ClosetViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var items: [OutfitCanvasItem] = []
@@ -79,6 +82,7 @@ struct OutfitComposerView: View {
     @State private var selectedTextID: UUID? = nil
     @State private var backgroundColor: Color = .white
     @State private var showPicker = false
+    @State private var canvasSize: CGSize = .zero
 
     // 드래그 삭제
     @State private var draggingItemID: UUID? = nil
@@ -104,9 +108,10 @@ struct OutfitComposerView: View {
                         onAttempt: { showDiscardAlert = true }
                     )
                 }
-                .navigationTitle(isTextEditing ? "" : "조합 생성")
+                .navigationTitle(isTextEditing ? "" : (editingOutfit == nil ? "조합 생성" : "조합 수정"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
+                .onAppear { loadEditingOutfitIfNeeded() }
         }
         .confirmationDialog("저장하지 않고 나가시겠습니까?", isPresented: $showDiscardAlert, titleVisibility: .visible) {
             Button("나가기", role: .destructive) { dismiss() }
@@ -130,6 +135,8 @@ struct OutfitComposerView: View {
                 canvas(width: cw, height: ch)
                     .padding(.horizontal, 16)
                     .padding(.top, 16)
+                    .onAppear { canvasSize = CGSize(width: cw, height: ch) }
+                    .onChange(of: geo.size) { _, _ in canvasSize = CGSize(width: cw, height: ch) }
             }
             if isTextEditing { colorPaletteBar }
         }
@@ -154,14 +161,18 @@ struct OutfitComposerView: View {
             if isTextEditing {
                 Button("완료") { confirmTextEditing() }.fontWeight(.semibold)
             } else {
-                Button("저장") { dismiss() }
+                Button("저장") {
+                    Task { await saveOutfit() }
+                }
+                .fontWeight(.semibold)
+                .disabled(items.isEmpty && textItems.isEmpty)
             }
         }
     }
 
     // MARK: - Canvas
 
-    private func canvas(width: CGFloat, height: CGFloat) -> some View {
+    private func canvas(width: CGFloat, height: CGFloat, showOverlays: Bool = true) -> some View {
         ZStack {
             backgroundColor
 
@@ -169,11 +180,11 @@ struct OutfitComposerView: View {
                 CanvasClothingItem(
                     item: item,
                     canvasWidth: width,
-                    onUpdate: { updated in
+                    onUpdate: { updated, pureDrag in
                         if let idx = items.firstIndex(where: { $0.id == updated.id }) {
                             items[idx] = updated
                         }
-                        checkDeleteZone(offset: updated.offset, canvasHeight: height)
+                        if pureDrag { checkDeleteZone(offset: updated.offset, canvasHeight: height) }
                     },
                     onDragStart: { id in draggingItemID = id },
                     onDragEnd: { id in
@@ -189,11 +200,11 @@ struct OutfitComposerView: View {
                     item: text,
                     isSelected: selectedTextID == text.id,
                     onSelect: { selectedTextID = text.id },
-                    onUpdate: { updated in
+                    onUpdate: { updated, pureDrag in
                         if let idx = textItems.firstIndex(where: { $0.id == updated.id }) {
                             textItems[idx] = updated
                         }
-                        checkDeleteZone(offset: updated.offset, canvasHeight: height)
+                        if pureDrag { checkDeleteZone(offset: updated.offset, canvasHeight: height) }
                     },
                     onEdit: { startTextEditing(editingID: text.id) },
                     onDragStart: { id in draggingItemID = id },
@@ -243,7 +254,7 @@ struct OutfitComposerView: View {
         .onTapGesture { if !isTextEditing { selectedTextID = nil } }
         // clipShape 이후 overlay → 클리핑 없이 항상 최상단 표시
         .overlay(alignment: .topTrailing) {
-            if !isTextEditing {
+            if showOverlays && !isTextEditing {
                 VStack(spacing: 8) {
                     Button { startTextEditing(editingID: nil) } label: {
                         ZStack {
@@ -271,7 +282,7 @@ struct OutfitComposerView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if !isTextEditing {
+            if showOverlays && !isTextEditing {
                 ColorPicker("", selection: $backgroundColor, supportsOpacity: false)
                     .labelsHidden()
                     .frame(width: 44, height: 44)
@@ -328,6 +339,46 @@ struct OutfitComposerView: View {
 
     // MARK: - Helpers
 
+    private func loadEditingOutfitIfNeeded() {
+        guard let existing = editingOutfit, items.isEmpty else { return }
+        let clothingByID = Dictionary(uniqueKeysWithValues: clothingList.map { ($0.id, $0) })
+        items = existing.clothingIDs.compactMap { id in
+            clothingByID[id].map { OutfitCanvasItem(id: UUID(), clothing: $0) }
+        }
+    }
+
+    private func saveOutfit() async {
+        var imageURL: String? = nil
+        let cw = canvasSize.width
+        let ch = canvasSize.height
+        if cw > 0 && ch > 0 {
+            let rendered = canvas(width: cw, height: ch, showOverlays: false)
+            let renderer = ImageRenderer(content: rendered)
+            renderer.scale = UIScreen.main.scale
+            if let img = renderer.uiImage {
+                imageURL = try? ImageStorageService.shared.savePNG(img, name: UUID().uuidString)
+            }
+        }
+        if let existing = editingOutfit {
+            var updated = existing
+            updated.clothingIDs = items.map { $0.clothing.id }
+            updated.imageURL = imageURL
+            await viewModel.updateOutfit(updated)
+        } else {
+            let outfit = OutfitEntity(
+                id: UUID(),
+                name: "",
+                clothingIDs: items.map { $0.clothing.id },
+                tags: [],
+                note: "",
+                createdAt: Date(),
+                imageURL: imageURL
+            )
+            await viewModel.saveOutfit(outfit)
+        }
+        dismiss()
+    }
+
     private func checkDeleteZone(offset: CGSize, canvasHeight: CGFloat) {
         isOverDeleteZone = offset.height > (canvasHeight / 2 - 80)
     }
@@ -376,22 +427,141 @@ struct OutfitComposerView: View {
     }
 }
 
+// MARK: - UIKit Gesture Layer (pan blocks pinch/rotation via shouldReceive)
+
+private struct CanvasItemGestureView: UIViewRepresentable {
+    let onPanBegan: () -> Void
+    let onPanChanged: (CGSize) -> Void    // incremental delta
+    let onPanEnded: () -> Void
+    let onScaleDelta: (CGFloat) -> Void   // incremental multiplier
+    let onRotationDelta: (Double) -> Void // incremental radians
+    var onTap: (() -> Void)? = nil
+    var onDoubleTap: (() -> Void)? = nil
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+
+        let pan = UIPanGestureRecognizer(target: context.coordinator,
+                                         action: #selector(Coordinator.handlePan(_:)))
+        pan.delegate = context.coordinator
+        view.addGestureRecognizer(pan)
+
+        let pinch = UIPinchGestureRecognizer(target: context.coordinator,
+                                              action: #selector(Coordinator.handlePinch(_:)))
+        pinch.delegate = context.coordinator
+        view.addGestureRecognizer(pinch)
+
+        let rot = UIRotationGestureRecognizer(target: context.coordinator,
+                                               action: #selector(Coordinator.handleRotation(_:)))
+        rot.delegate = context.coordinator
+        view.addGestureRecognizer(rot)
+
+        if onTap != nil {
+            let tap = UITapGestureRecognizer(target: context.coordinator,
+                                              action: #selector(Coordinator.handleTap))
+            view.addGestureRecognizer(tap)
+        }
+        if onDoubleTap != nil {
+            let dbl = UITapGestureRecognizer(target: context.coordinator,
+                                              action: #selector(Coordinator.handleDoubleTap))
+            dbl.numberOfTapsRequired = 2
+            view.addGestureRecognizer(dbl)
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.host = self
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var host: CanvasItemGestureView?
+        private var isPanning = false
+        private var lastWindowLocation: CGPoint = .zero
+
+        // pinch + rotation can be simultaneous; pan is exclusive
+        func gestureRecognizer(_ gr: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            !(gr is UIPanGestureRecognizer || other is UIPanGestureRecognizer)
+        }
+
+        // block new pinch/rotation touches while pan is active
+        func gestureRecognizer(_ gr: UIGestureRecognizer,
+                               shouldReceive touch: UITouch) -> Bool {
+            if isPanning && (gr is UIPinchGestureRecognizer || gr is UIRotationGestureRecognizer) {
+                return false
+            }
+            return true
+        }
+
+        @objc func handlePan(_ g: UIPanGestureRecognizer) {
+            // 윈도우 좌표계로 델타 계산 — 아이템의 scale/rotation 변환에 영향받지 않음
+            let windowLoc = g.location(in: g.view?.window)
+            switch g.state {
+            case .began:
+                lastWindowLocation = windowLoc
+                isPanning = true
+                host?.onPanBegan()
+            case .changed:
+                let delta = CGSize(
+                    width: windowLoc.x - lastWindowLocation.x,
+                    height: windowLoc.y - lastWindowLocation.y
+                )
+                lastWindowLocation = windowLoc
+                host?.onPanChanged(delta)
+            case .ended, .cancelled:
+                isPanning = false
+                host?.onPanEnded()
+            default: break
+            }
+        }
+
+        @objc func handlePinch(_ g: UIPinchGestureRecognizer) {
+            switch g.state {
+            case .began:
+                g.scale = 1.0
+            case .changed:
+                host?.onScaleDelta(g.scale)
+                g.scale = 1.0
+            case .ended, .cancelled:
+                if g.scale != 1.0 { host?.onScaleDelta(g.scale) }
+            default: break
+            }
+        }
+
+        @objc func handleRotation(_ g: UIRotationGestureRecognizer) {
+            switch g.state {
+            case .began:
+                g.rotation = 0
+            case .changed:
+                host?.onRotationDelta(Double(g.rotation))
+                g.rotation = 0
+            case .ended, .cancelled:
+                if g.rotation != 0 { host?.onRotationDelta(Double(g.rotation)) }
+            default: break
+            }
+        }
+
+        @objc func handleTap(_ g: UITapGestureRecognizer) { host?.onTap?() }
+        @objc func handleDoubleTap(_ g: UITapGestureRecognizer) { host?.onDoubleTap?() }
+    }
+}
+
 // MARK: - Canvas Clothing Item
 
 struct CanvasClothingItem: View {
     let item: OutfitCanvasItem
     let canvasWidth: CGFloat
-    let onUpdate: (OutfitCanvasItem) -> Void
+    let onUpdate: (OutfitCanvasItem, Bool) -> Void
     let onDragStart: (UUID) -> Void
     let onDragEnd: (UUID) -> Void
 
-    // 로컬 커밋 상태 — item prop 갱신 타이밍 차이로 인한 stale 캡처 방지
     @State private var currentOffset: CGSize = .zero
     @State private var currentScale: CGFloat = 0.35
     @State private var currentRotation: Angle = .zero
-    @State private var dragStart: CGSize?
-    @GestureState private var magnifyDelta: CGFloat = 1.0
-    @GestureState private var rotationDelta: Angle = .zero
 
     private var image: UIImage? {
         if let bgPath = item.clothing.backgroundRemovedImageURL,
@@ -399,9 +569,8 @@ struct CanvasClothingItem: View {
         return item.clothing.imageURLs.first.flatMap { ImageStorageService.shared.load(path: $0) }
     }
 
-    private var frameSize: CGFloat { canvasWidth * currentScale * magnifyDelta }
-
     var body: some View {
+        let frameSize = canvasWidth * currentScale
         Group {
             if let img = image {
                 Image(uiImage: img)
@@ -415,58 +584,42 @@ struct CanvasClothingItem: View {
                     .overlay { Image(systemName: "tshirt").foregroundStyle(.secondary) }
             }
         }
-        .rotationEffect(currentRotation + rotationDelta)
-        .offset(x: currentOffset.width, y: currentOffset.height)
-        .gesture(
-            SimultaneousGesture(
-                DragGesture(minimumDistance: 2)
-                    .onChanged { val in
-                        if dragStart == nil {
-                            dragStart = currentOffset
-                            onDragStart(item.id)
-                        }
-                        guard let s = dragStart else { return }
-                        let newOffset = CGSize(
-                            width: s.width + val.translation.width,
-                            height: s.height + val.translation.height
-                        )
-                        currentOffset = newOffset
-                        var updated = item
-                        updated.offset = newOffset
-                        updated.scale = currentScale
-                        updated.rotation = currentRotation
-                        onUpdate(updated)
-                    }
-                    .onEnded { _ in
-                        dragStart = nil
-                        onDragEnd(item.id)
-                    },
-                SimultaneousGesture(
-                    MagnificationGesture()
-                        .updating($magnifyDelta) { val, state, _ in state = val }
-                        .onEnded { val in
-                            let newScale = min(3.0, max(0.05, currentScale * val))
-                            currentScale = newScale
-                            var updated = item
-                            updated.offset = currentOffset
-                            updated.scale = newScale
-                            updated.rotation = currentRotation
-                            onUpdate(updated)
-                        },
-                    RotationGesture()
-                        .updating($rotationDelta) { val, state, _ in state = val }
-                        .onEnded { val in
-                            let newRotation = currentRotation + val
-                            currentRotation = newRotation
-                            var updated = item
-                            updated.offset = currentOffset
-                            updated.scale = currentScale
-                            updated.rotation = newRotation
-                            onUpdate(updated)
-                        }
-                )
+        .overlay(
+            CanvasItemGestureView(
+                onPanBegan: { onDragStart(item.id) },
+                onPanChanged: { delta in
+                    let newOffset = CGSize(
+                        width: currentOffset.width + delta.width,
+                        height: currentOffset.height + delta.height
+                    )
+                    currentOffset = newOffset
+                    var updated = item
+                    updated.offset = newOffset
+                    updated.scale = currentScale
+                    updated.rotation = currentRotation
+                    onUpdate(updated, true)
+                },
+                onPanEnded: { onDragEnd(item.id) },
+                onScaleDelta: { factor in
+                    currentScale = min(3.0, max(0.05, currentScale * factor))
+                    var updated = item
+                    updated.offset = currentOffset
+                    updated.scale = currentScale
+                    updated.rotation = currentRotation
+                    onUpdate(updated, false)
+                },
+                onRotationDelta: { radians in
+                    currentRotation += Angle(radians: radians)
+                    var updated = item
+                    updated.offset = currentOffset
+                    updated.scale = currentScale
+                    updated.rotation = currentRotation
+                    onUpdate(updated, false)
+                }
             )
         )
+        .rotationEffect(currentRotation)
+        .offset(x: currentOffset.width, y: currentOffset.height)
         .onAppear {
             currentOffset = item.offset
             currentScale = item.scale
@@ -481,7 +634,7 @@ struct CanvasTextItem: View {
     let item: OutfitTextItem
     let isSelected: Bool
     let onSelect: () -> Void
-    let onUpdate: (OutfitTextItem) -> Void
+    let onUpdate: (OutfitTextItem, Bool) -> Void
     let onEdit: () -> Void
     let onDragStart: (UUID) -> Void
     let onDragEnd: (UUID) -> Void
@@ -489,13 +642,10 @@ struct CanvasTextItem: View {
     @State private var currentOffset: CGSize = .zero
     @State private var currentScale: CGFloat = 1.0
     @State private var currentRotation: Angle = .zero
-    @State private var dragStart: CGSize?
-    @GestureState private var magnifyDelta: CGFloat = 1.0
-    @GestureState private var rotationDelta: Angle = .zero
 
     var body: some View {
         Text(item.text)
-            .font(.system(size: item.fontSize * currentScale * magnifyDelta, weight: .semibold))
+            .font(.system(size: item.fontSize * currentScale, weight: .semibold))
             .foregroundStyle(item.color)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 8).padding(.vertical, 6)
@@ -505,61 +655,45 @@ struct CanvasTextItem: View {
                         .stroke(Color.accentColor.opacity(0.7), lineWidth: 1.5)
                 }
             }
-            .rotationEffect(currentRotation + rotationDelta)
-            .offset(x: currentOffset.width, y: currentOffset.height)
-            .gesture(
-                SimultaneousGesture(
-                    DragGesture(minimumDistance: 2)
-                        .onChanged { val in
-                            if dragStart == nil {
-                                dragStart = currentOffset
-                                onDragStart(item.id)
-                            }
-                            guard let s = dragStart else { return }
-                            onSelect()
-                            let newOffset = CGSize(
-                                width: s.width + val.translation.width,
-                                height: s.height + val.translation.height
-                            )
-                            currentOffset = newOffset
-                            var updated = item
-                            updated.offset = newOffset
-                            updated.scale = currentScale
-                            updated.rotation = currentRotation
-                            onUpdate(updated)
-                        }
-                        .onEnded { _ in
-                            dragStart = nil
-                            onDragEnd(item.id)
-                        },
-                    SimultaneousGesture(
-                        MagnificationGesture()
-                            .updating($magnifyDelta) { val, state, _ in state = val }
-                            .onEnded { val in
-                                let newScale = min(4.0, max(0.2, currentScale * val))
-                                currentScale = newScale
-                                var updated = item
-                                updated.offset = currentOffset
-                                updated.scale = newScale
-                                updated.rotation = currentRotation
-                                onUpdate(updated)
-                            },
-                        RotationGesture()
-                            .updating($rotationDelta) { val, state, _ in state = val }
-                            .onEnded { val in
-                                let newRotation = currentRotation + val
-                                currentRotation = newRotation
-                                var updated = item
-                                updated.offset = currentOffset
-                                updated.scale = currentScale
-                                updated.rotation = newRotation
-                                onUpdate(updated)
-                            }
-                    )
+            .overlay(
+                CanvasItemGestureView(
+                    onPanBegan: { onDragStart(item.id) },
+                    onPanChanged: { delta in
+                        let newOffset = CGSize(
+                            width: currentOffset.width + delta.width,
+                            height: currentOffset.height + delta.height
+                        )
+                        currentOffset = newOffset
+                        onSelect()
+                        var updated = item
+                        updated.offset = newOffset
+                        updated.scale = currentScale
+                        updated.rotation = currentRotation
+                        onUpdate(updated, true)
+                    },
+                    onPanEnded: { onDragEnd(item.id) },
+                    onScaleDelta: { factor in
+                        currentScale = min(4.0, max(0.2, currentScale * factor))
+                        var updated = item
+                        updated.offset = currentOffset
+                        updated.scale = currentScale
+                        updated.rotation = currentRotation
+                        onUpdate(updated, false)
+                    },
+                    onRotationDelta: { radians in
+                        currentRotation += Angle(radians: radians)
+                        var updated = item
+                        updated.offset = currentOffset
+                        updated.scale = currentScale
+                        updated.rotation = currentRotation
+                        onUpdate(updated, false)
+                    },
+                    onTap: { onSelect() },
+                    onDoubleTap: { onEdit() }
                 )
             )
-            .onTapGesture { onSelect() }
-            .simultaneousGesture(TapGesture(count: 2).onEnded { onEdit() })
+            .rotationEffect(currentRotation)
+            .offset(x: currentOffset.width, y: currentOffset.height)
             .onAppear {
                 currentOffset = item.offset
                 currentScale = item.scale

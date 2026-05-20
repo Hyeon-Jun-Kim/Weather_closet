@@ -37,6 +37,10 @@ final class AppDependencyContainer {
     private lazy var getClothingListUseCase = GetClothingListUseCase(repository: closetRepository)
     private lazy var deleteClothingUseCase = DeleteClothingUseCase(repository: closetRepository)
     private lazy var updateClothingUseCase = UpdateClothingUseCase(repository: closetRepository)
+    private lazy var addOutfitUseCase = AddOutfitUseCase(repository: closetRepository)
+    private lazy var getOutfitListUseCase = GetOutfitListUseCase(repository: closetRepository)
+    private lazy var updateOutfitUseCase = UpdateOutfitUseCase(repository: closetRepository)
+    private lazy var deleteOutfitUseCase = DeleteOutfitUseCase(repository: closetRepository)
     private lazy var recordOutfitUseCase = RecordOutfitUseCase(repository: calendarRepository)
     private lazy var getCalendarEventsUseCase = GetCalendarEventsUseCase(repository: calendarRepository)
     private lazy var getAnalysisUseCase = GetAnalysisUseCase(
@@ -65,7 +69,11 @@ final class AppDependencyContainer {
             addClothingUseCase: addClothingUseCase,
             getClothingListUseCase: getClothingListUseCase,
             deleteClothingUseCase: deleteClothingUseCase,
-            updateClothingUseCase: updateClothingUseCase
+            updateClothingUseCase: updateClothingUseCase,
+            addOutfitUseCase: addOutfitUseCase,
+            getOutfitListUseCase: getOutfitListUseCase,
+            updateOutfitUseCase: updateOutfitUseCase,
+            deleteOutfitUseCase: deleteOutfitUseCase
         )
     }
 
