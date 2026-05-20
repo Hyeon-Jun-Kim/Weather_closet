@@ -135,6 +135,8 @@ final class OutfitModel {
     var note: String
     var createdAt: Date
     var imageURL: String?
+    var canvasStatesData: Data?
+    var textStatesData: Data?
 
     init(entity: OutfitEntity) {
         self.id = entity.id
@@ -144,6 +146,8 @@ final class OutfitModel {
         self.note = entity.note
         self.createdAt = entity.createdAt
         self.imageURL = entity.imageURL
+        self.canvasStatesData = try? JSONEncoder().encode(entity.canvasStates)
+        self.textStatesData = try? JSONEncoder().encode(entity.textStates)
     }
 
     func update(from entity: OutfitEntity) {
@@ -152,9 +156,17 @@ final class OutfitModel {
         tags = entity.tags
         note = entity.note
         imageURL = entity.imageURL
+        canvasStatesData = try? JSONEncoder().encode(entity.canvasStates)
+        textStatesData = try? JSONEncoder().encode(entity.textStates)
     }
 
     func toEntity() -> OutfitEntity {
-        OutfitEntity(id: id, name: name, clothingIDs: clothingIDs, tags: tags, note: note, createdAt: createdAt, imageURL: imageURL)
+        let canvasStates = canvasStatesData.flatMap { try? JSONDecoder().decode([CanvasItemState].self, from: $0) } ?? []
+        let textStates = textStatesData.flatMap { try? JSONDecoder().decode([TextItemState].self, from: $0) } ?? []
+        return OutfitEntity(
+            id: id, name: name, clothingIDs: clothingIDs,
+            canvasStates: canvasStates, textStates: textStates,
+            tags: tags, note: note, createdAt: createdAt, imageURL: imageURL
+        )
     }
 }

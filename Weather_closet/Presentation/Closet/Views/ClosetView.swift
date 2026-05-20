@@ -114,7 +114,7 @@ struct OutfitListView: View {
     @State private var deletingOutfit: OutfitEntity? = nil
     @State private var showDeleteAlert = false
 
-    private let columns = [GridItem(.flexible()), GridItem(.flexible())]
+    private let columns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
 
     var body: some View {
         Group {
@@ -127,7 +127,7 @@ struct OutfitListView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 12) {
+                    LazyVGrid(columns: columns, spacing: 10) {
                         ForEach(viewModel.outfits.sorted { $0.createdAt > $1.createdAt }) { outfit in
                             OutfitGridCell(outfit: outfit, clothingList: viewModel.clothingList)
                                 .contextMenu {
@@ -181,22 +181,23 @@ struct OutfitGridCell: View {
     }
 
     var body: some View {
-        Group {
-            if let img = previewImage {
-                Image(uiImage: img)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                thumbnailGrid
+        Color.clear
+            .aspectRatio(3/4, contentMode: .fit)
+            .overlay {
+                if let img = previewImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                        .clipped()
+                } else {
+                    thumbnailGrid
+                }
             }
-        }
-        .frame(maxWidth: .infinity)
-        .aspectRatio(3/4, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
-        )
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+            )
     }
 
     @ViewBuilder

@@ -342,23 +342,68 @@ struct OutfitComposerView: View {
     private func loadEditingOutfitIfNeeded() {
         guard let existing = editingOutfit, items.isEmpty else { return }
         let clothingByID = Dictionary(uniqueKeysWithValues: clothingList.map { ($0.id, $0) })
-        items = existing.clothingIDs.compactMap { id in
-            clothingByID[id].map { OutfitCanvasItem(id: UUID(), clothing: $0) }
+
+        if !existing.canvasStates.isEmpty {
+            items = existing.canvasStates.compactMap { state in
+                clothingByID[state.clothingID].map {
+                    OutfitCanvasItem(
+                        id: UUID(),
+                        clothing: $0,
+                        offset: CGSize(width: state.offsetX, height: state.offsetY),
+                        scale: state.scale,
+                        rotation: Angle(radians: state.rotationRadians)
+                    )
+                }
+            }
+        } else {
+            items = existing.clothingIDs.compactMap { id in
+                clothingByID[id].map { OutfitCanvasItem(id: UUID(), clothing: $0) }
+            }
+        }
+
+        textItems = existing.textStates.map { state in
+            OutfitTextItem(
+                id: UUID(),
+                text: state.text,
+                colorIndex: state.colorIndex,
+                fontSize: state.fontSize,
+                offset: CGSize(width: state.offsetX, height: state.offsetY),
+                scale: state.scale,
+                rotation: Angle(radians: state.rotationRadians)
+            )
         }
     }
 
     private func saveOutfit() async {
+        let canvasStates = items.map { item in
+            CanvasItemState(
+                clothingID: item.clothing.id,
+                offsetX: item.offset.width,
+                offsetY: item.offset.height,
+                scale: item.scale,
+                rotationRadians: item.rotation.radians
+            )
+        }
+        let savedTextStates = textItems.map { text in
+            TextItemState(
+                text: text.text,
+                colorIndex: text.colorIndex,
+                fontSize: text.fontSize,
+                offsetX: text.offset.width,
+                offsetY: text.offset.height,
+                scale: text.scale,
+                rotationRadians: text.rotation.radians
+            )
+        }
+
         var imageURL: String? = nil
         let cw = canvasSize.width
         let ch = canvasSize.height
         if cw > 0 && ch > 0 {
-            let snapshot = items
-            let snapshotText = textItems
-            let bg = backgroundColor
             let rendered = ThumbnailCanvasView(
-                items: snapshot,
-                textItems: snapshotText,
-                backgroundColor: bg,
+                items: items,
+                textItems: textItems,
+                backgroundColor: backgroundColor,
                 width: cw,
                 height: ch
             )
@@ -368,9 +413,12 @@ struct OutfitComposerView: View {
                 imageURL = try? ImageStorageService.shared.savePNG(img, name: UUID().uuidString)
             }
         }
+
         if let existing = editingOutfit {
             var updated = existing
             updated.clothingIDs = items.map { $0.clothing.id }
+            updated.canvasStates = canvasStates
+            updated.textStates = savedTextStates
             updated.imageURL = imageURL
             await viewModel.updateOutfit(updated)
         } else {
@@ -378,6 +426,8 @@ struct OutfitComposerView: View {
                 id: UUID(),
                 name: "",
                 clothingIDs: items.map { $0.clothing.id },
+                canvasStates: canvasStates,
+                textStates: savedTextStates,
                 tags: [],
                 note: "",
                 createdAt: Date(),
