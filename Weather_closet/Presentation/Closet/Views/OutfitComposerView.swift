@@ -141,7 +141,7 @@ struct OutfitComposerView: View {
     // MARK: - Main Content / Toolbar
 
     private var mainContent: some View {
-        VStack(spacing: 0) {
+        let stack = VStack(spacing: 0) {
             GeometryReader { geo in
                 let cw = geo.size.width - 32
                 let ch = geo.size.height - 32
@@ -156,6 +156,19 @@ struct OutfitComposerView: View {
         .overlay(alignment: .bottom) {
             if draggingItemID != nil { deleteZoneOverlay }
         }
+        .simultaneousGesture(TapGesture().onEnded {
+            if !isTextEditing {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+        })
+
+        return Group {
+            if isTextEditing {
+                stack
+            } else {
+                stack.ignoresSafeArea(.keyboard)
+            }
+        }
     }
 
     @ToolbarContentBuilder
@@ -163,7 +176,7 @@ struct OutfitComposerView: View {
         ToolbarItem(placement: .principal) {
             if !isTextEditing {
                 TextField(
-                    editingOutfit == nil ? "조합 생성" : "조합 수정",
+                    editingOutfit == nil ? "조합명을 입력해주세요" : "조합 수정",
                     text: $outfitTitle
                 )
                 .font(.headline)
