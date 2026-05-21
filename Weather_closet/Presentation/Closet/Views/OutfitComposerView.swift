@@ -61,7 +61,7 @@ struct OutfitCanvasItem: Identifiable {
 struct OutfitTextItem: Identifiable {
     let id: UUID
     var text: String
-    var colorIndex: Int = 0
+    var colorIndex: Int = 1
     var fontSize: CGFloat = 28
     var offset: CGSize = .zero
     var scale: CGFloat = 1.0
@@ -105,7 +105,7 @@ struct OutfitComposerView: View {
     @State private var isTextEditing = false
     @State private var editingTextID: UUID? = nil
     @State private var liveEditText = ""
-    @State private var liveColorIndex = 0
+    @State private var liveColorIndex = 1
     @State private var liveFontScale: CGFloat = 1.0
     @State private var liveAlignment: Int = 1
     @State private var liveFontDesign: Int = 0
@@ -176,7 +176,7 @@ struct OutfitComposerView: View {
         ToolbarItem(placement: .principal) {
             if !isTextEditing {
                 TextField(
-                    editingOutfit == nil ? "조합명을 입력해주세요" : "조합 수정",
+                    editingOutfit == nil ? "조합명을 입력해주세요" : "조합명을 입력해주세요",
                     text: $outfitTitle
                 )
                 .font(.headline)
@@ -224,7 +224,10 @@ struct OutfitComposerView: View {
                     },
                     onDragStart: { id in draggingItemID = id },
                     onDragEnd: { id in
-                        if isOverDeleteZone { items.removeAll { $0.id == id } }
+                        if isOverDeleteZone {
+                            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                            items.removeAll { $0.id == id }
+                        }
                         draggingItemID = nil
                         isOverDeleteZone = false
                     }
@@ -246,6 +249,7 @@ struct OutfitComposerView: View {
                     onDragStart: { id in draggingItemID = id },
                     onDragEnd: { id in
                         if isOverDeleteZone {
+                            UINotificationFeedbackGenerator().notificationOccurred(.warning)
                             textItems.removeAll { $0.id == id }
                             if selectedTextID == id { selectedTextID = nil }
                         }
@@ -540,7 +544,11 @@ struct OutfitComposerView: View {
     }
 
     private func checkDeleteZone(offset: CGSize, canvasHeight: CGFloat) {
-        isOverDeleteZone = offset.height > (canvasHeight / 2 - 80)
+        let over = offset.height > (canvasHeight / 2 - 80)
+        if over && !isOverDeleteZone {
+            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+        }
+        isOverDeleteZone = over
     }
 
     private func startTextEditing(editingID: UUID?) {
@@ -555,7 +563,7 @@ struct OutfitComposerView: View {
         } else {
             editingTextID = nil
             liveEditText = ""
-            liveColorIndex = 0
+            liveColorIndex = 1
             liveFontScale = 1.0
             liveAlignment = 1
             liveFontDesign = 0

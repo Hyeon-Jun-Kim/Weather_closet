@@ -21,6 +21,7 @@ struct ClosetView: View {
     @State private var showAddWishlistSheet = false
     @State private var showAddOutfitSheet = false
     @State private var selectedTab: ClosetMainTab = .closet
+    @State private var isDraggingOutfit = false
 
     var body: some View {
         NavigationStack {
@@ -36,7 +37,7 @@ struct ClosetView: View {
                             .environmentObject(wishlistViewModel)
                             .tag(ClosetMainTab.wishlist)
 
-                        OutfitListView()
+                        OutfitListView(isDraggingOutfit: $isDraggingOutfit)
                             .environmentObject(viewModel)
                             .tag(ClosetMainTab.outfit)
                     }
@@ -58,6 +59,9 @@ struct ClosetView: View {
                 }
                 .padding(.trailing, 20)
                 .padding(.bottom, 20)
+                .opacity(selectedTab == .outfit && isDraggingOutfit ? 0 : 1)
+                .scaleEffect(selectedTab == .outfit && isDraggingOutfit ? 0.01 : 1)
+                .animation(.spring(response: 0.3), value: isDraggingOutfit)
             }
             .animation(.easeInOut(duration: 0.2), value: selectedTab)
             .navigationBarTitleDisplayMode(.inline)
@@ -108,14 +112,27 @@ struct ClosetView: View {
 
 // MARK: - Outfit List
 
+private let outfitOrderDefaultsKey = "outfitGridOrder"
+
 struct OutfitListView: View {
+    @Binding var isDraggingOutfit: Bool
     @EnvironmentObject var viewModel: ClosetViewModel
     @State private var viewingOutfit: OutfitEntity? = nil
-    @State private var editingOutfit: OutfitEntity? = nil
-    @State private var deletingOutfit: OutfitEntity? = nil
+
+    @State private var orderedIDs: [UUID] = []
+    @State private var draggingID: UUID? = nil
+    @State private var cellFrames: [UUID: CGRect] = [:]
+    @State private var trashFrame: CGRect = .zero
+    @State private var isOverTrash = false
+    @State private var pendingDeleteID: UUID? = nil
     @State private var showDeleteAlert = false
 
     private let columns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+
+    private var orderedOutfits: [OutfitEntity] {
+        let byID = Dictionary(uniqueKeysWithValues: viewModel.outfits.map { ($0.id, $0) })
+        return orderedIDs.compactMap { byID[$0] }
+    }
 
     var body: some View {
         Group {
@@ -127,52 +144,194 @@ struct OutfitListView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 10) {
-                        ForEach(viewModel.outfits.sorted { $0.createdAt > $1.createdAt }) { outfit in
-                            OutfitGridCell(outfit: outfit, clothingList: viewModel.clothingList)
-                                .onTapGesture { viewingOutfit = outfit }
-                                .contextMenu {
-                                    Button {
-                                        editingOutfit = outfit
-                                    } label: {
-                                        Label("수정", systemImage: "pencil")
-                                    }
-                                    Button(role: .destructive) {
-                                        deletingOutfit = outfit
-                                        showDeleteAlert = true
-                                    } label: {
-                                        Label("삭제", systemImage: "trash")
-                                    }
-                                }
+                ZStack(alignment: .bottom) {
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: 10) {
+                            ForEach(orderedOutfits) { outfit in
+                                outfitCell(outfit)
+                            }
                         }
+                        .padding(16)
                     }
-                    .padding(16)
+                    .scrollDisabled(draggingID != nil)
+                    .onPreferenceChange(OutfitCellFrameKey.self) { cellFrames = $0 }
+
+                    if draggingID != nil {
+                        trashZoneView
+                            .transition(.scale(scale: 0.5).combined(with: .opacity))
+                    }
                 }
+                .coordinateSpace(name: "outfitGrid")
+                .onPreferenceChange(TrashZoneFrameKey.self) { trashFrame = $0 }
+                .animation(.spring(response: 0.35), value: draggingID != nil)
             }
+        }
+        .onAppear { syncOrder() }
+        .onChange(of: viewModel.outfits.count) { _, _ in syncOrder() }
+        .confirmationDialog("이 조합을 삭제하시겠습니까?", isPresented: $showDeleteAlert, titleVisibility: .visible) {
+            Button("삭제", role: .destructive) {
+                guard let id = pendingDeleteID else { return }
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                Task { await viewModel.deleteOutfit(id: id) }
+                pendingDeleteID = nil
+            }
+            Button("취소", role: .cancel) { pendingDeleteID = nil }
         }
         .sheet(item: $viewingOutfit) { outfit in
-            OutfitDetailView(
-                outfit: outfit,
-                clothingList: viewModel.clothingList,
-                onEdit: { editingOutfit = outfit }
-            )
-            .environmentObject(viewModel)
-        }
-        .sheet(item: $editingOutfit) { outfit in
-            OutfitComposerView(clothingList: viewModel.clothingList, editingOutfit: outfit)
+            OutfitDetailOrEditorView(outfit: outfit, clothingList: viewModel.clothingList)
                 .environmentObject(viewModel)
         }
-        .confirmationDialog(
-            "이 조합을 삭제하시겠습니까?",
-            isPresented: $showDeleteAlert,
-            titleVisibility: .visible
-        ) {
-            Button("삭제", role: .destructive) {
-                guard let outfit = deletingOutfit else { return }
-                Task { await viewModel.deleteOutfit(id: outfit.id) }
+    }
+
+    private var trashZoneView: some View {
+        ZStack {
+            Circle()
+                .fill(isOverTrash ? Color.red : Color(.systemGray).opacity(0.85))
+                .frame(width: 52, height: 52)
+            Image(systemName: isOverTrash ? "trash.fill" : "trash")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+        }
+        .animation(.spring(response: 0.2), value: isOverTrash)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.bottom, 20)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: TrashZoneFrameKey.self,
+                    value: geo.frame(in: .named("outfitGrid"))
+                )
             }
-            Button("취소", role: .cancel) {}
+        )
+    }
+
+    @ViewBuilder
+    private func outfitCell(_ outfit: OutfitEntity) -> some View {
+        let isDragging = draggingID == outfit.id
+
+        OutfitGridCell(outfit: outfit, clothingList: viewModel.clothingList)
+            .scaleEffect(isDragging ? 1.05 : 1.0)
+            .shadow(color: .black.opacity(isDragging ? 0.25 : 0), radius: 8, y: 4)
+            .animation(.spring(response: 0.3), value: isDragging)
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(
+                        key: OutfitCellFrameKey.self,
+                        value: [outfit.id: geo.frame(in: .named("outfitGrid"))]
+                    )
+                }
+            )
+            .onTapGesture {
+                guard draggingID == nil else { return }
+                viewingOutfit = outfit
+            }
+            .gesture(
+                LongPressGesture(minimumDuration: 0.4)
+                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("outfitGrid")))
+                    .onChanged { value in
+                        switch value {
+                        case .second(true, let drag):
+                            if draggingID == nil {
+                                draggingID = outfit.id
+                                isDraggingOutfit = true
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            }
+                            if let drag {
+                                let wasOverTrash = isOverTrash
+                                isOverTrash = !trashFrame.isEmpty && trashFrame.contains(drag.location)
+                                if isOverTrash && !wasOverTrash {
+                                    UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+                                }
+                                if !isOverTrash {
+                                    reorder(dragLocation: drag.location)
+                                }
+                            }
+                        default:
+                            break
+                        }
+                    }
+                    .onEnded { _ in
+                        if isOverTrash, let id = draggingID {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            pendingDeleteID = id
+                            showDeleteAlert = true
+                        }
+                        withAnimation(.spring(response: 0.3)) {
+                            draggingID = nil
+                            isOverTrash = false
+                            isDraggingOutfit = false
+                        }
+                        saveOrder()
+                    }
+            )
+    }
+
+    private func reorder(dragLocation: CGPoint) {
+        guard let dragging = draggingID,
+              let target = cellFrames
+                .filter({ $0.key != dragging })
+                .min(by: { outfitCellDist($0.value, dragLocation) < outfitCellDist($1.value, dragLocation) }),
+              target.value.contains(dragLocation),
+              let fromIdx = orderedIDs.firstIndex(of: dragging),
+              let toIdx   = orderedIDs.firstIndex(of: target.key),
+              fromIdx != toIdx
+        else { return }
+
+        withAnimation(.interactiveSpring(response: 0.3)) {
+            orderedIDs.move(fromOffsets: IndexSet(integer: fromIdx),
+                            toOffset: toIdx > fromIdx ? toIdx + 1 : toIdx)
+        }
+    }
+
+    private func syncOrder() {
+        let allIDs = Set(viewModel.outfits.map { $0.id })
+        let saved  = (UserDefaults.standard.array(forKey: outfitOrderDefaultsKey) as? [String] ?? [])
+            .compactMap { UUID(uuidString: $0) }
+        var result = saved.filter { allIDs.contains($0) }
+        let newIDs = viewModel.outfits
+            .filter { !Set(result).contains($0.id) }
+            .sorted { $0.createdAt > $1.createdAt }
+            .map { $0.id }
+        orderedIDs = newIDs + result
+    }
+
+    private func saveOrder() {
+        UserDefaults.standard.set(orderedIDs.map { $0.uuidString }, forKey: outfitOrderDefaultsKey)
+    }
+}
+
+private struct OutfitCellFrameKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue: [UUID: CGRect] = [:]
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+private struct TrashZoneFrameKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
+    }
+}
+
+private func outfitCellDist(_ rect: CGRect, _ point: CGPoint) -> CGFloat {
+    let cx = rect.midX, cy = rect.midY
+    return sqrt(pow(cx - point.x, 2) + pow(cy - point.y, 2))
+}
+
+private struct OutfitDetailOrEditorView: View {
+    let outfit: OutfitEntity
+    let clothingList: [ClothingEntity]
+    @State private var isEditing = false
+    @EnvironmentObject var viewModel: ClosetViewModel
+
+    var body: some View {
+        if isEditing {
+            OutfitComposerView(clothingList: clothingList, editingOutfit: outfit)
+                .environmentObject(viewModel)
+        } else {
+            OutfitDetailView(outfit: outfit, clothingList: clothingList, onEdit: { isEditing = true })
+                .environmentObject(viewModel)
         }
     }
 }
@@ -183,6 +342,7 @@ struct OutfitDetailView: View {
     let onEdit: () -> Void
     @EnvironmentObject var viewModel: ClosetViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var showDeleteConfirm = false
 
     private var previewImage: UIImage? {
         guard let path = outfit.imageURL else { return nil }
@@ -235,14 +395,28 @@ struct OutfitDetailView: View {
                     Button("닫기") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("수정") {
-                        dismiss()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            onEdit()
+                    Menu {
+                        Button { onEdit() } label: {
+                            Label("수정", systemImage: "pencil")
                         }
+                        Button(role: .destructive) {
+                            showDeleteConfirm = true
+                        } label: {
+                            Label("삭제", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
-                    .fontWeight(.semibold)
                 }
+            }
+            .confirmationDialog("이 조합을 삭제하시겠습니까?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                Button("삭제", role: .destructive) {
+                    Task {
+                        await viewModel.deleteOutfit(id: outfit.id)
+                        dismiss()
+                    }
+                }
+                Button("취소", role: .cancel) {}
             }
         }
     }
@@ -281,32 +455,36 @@ struct OutfitGridCell: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Color.clear
-                .aspectRatio(3/4, contentMode: .fit)
-                .overlay {
-                    if let img = previewImage {
-                        Image(uiImage: img)
-                            .resizable()
-                            .scaledToFill()
-                            .clipped()
-                    } else {
-                        thumbnailGrid
-                    }
+        Color.clear
+            .aspectRatio(3/4, contentMode: .fit)
+            .overlay {
+                if let img = previewImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                        .clipped()
+                } else {
+                    thumbnailGrid
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
-                )
-
-            if !outfit.name.isEmpty {
-                Text(outfit.name)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
             }
-        }
+            .overlay(alignment: .topLeading) {
+                if !outfit.name.isEmpty {
+                    Text(outfit.name)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.regularMaterial, in: Capsule())
+                        .padding(8)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+            )
     }
 
     @ViewBuilder
