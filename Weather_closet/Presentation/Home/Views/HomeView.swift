@@ -7,6 +7,10 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    Text("오늘의 날씨")
+                        .font(.title).fontWeight(.bold)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
                     if viewModel.isLoading {
                         ProgressView()
                             .frame(maxWidth: .infinity, minHeight: 200)
@@ -23,7 +27,7 @@ struct HomeView: View {
                 }
                 .padding()
             }
-            .navigationTitle("오늘의 날씨")
+            .toolbar(.hidden, for: .navigationBar)
             .task { await viewModel.loadWeather() }
             .refreshable { await viewModel.loadWeather() }
             .alert("오류", isPresented: .constant(viewModel.errorMessage != nil)) {

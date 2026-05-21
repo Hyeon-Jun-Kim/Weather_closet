@@ -11,6 +11,13 @@ struct CalendarView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                Text("캘린더")
+                    .font(.title).fontWeight(.bold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.top, 16)
+                    .padding(.bottom, 4)
+
                 DatePicker(
                     "날짜 선택",
                     selection: $viewModel.selectedDate,
@@ -27,7 +34,11 @@ struct CalendarView: View {
 
                 ZStack {
                     if viewModel.eventsForSelectedDate.isEmpty {
-                        CalendarEmptyStateView()
+                        CalendarEmptyStateView(
+                            onAddOutfit:   { showOutfitSheet = true },
+                            onAddPurchase: { showPurchaseSheet = true },
+                            onAddSale:     { showSaleSheet = true }
+                        )
                     } else {
                         List {
                             ForEach(viewModel.eventsForSelectedDate) { event in
@@ -56,24 +67,7 @@ struct CalendarView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .navigationTitle("캘린더")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Button { showOutfitSheet = true } label: {
-                            Label("착용 기록", systemImage: "tshirt")
-                        }
-                        Button { showPurchaseSheet = true } label: {
-                            Label("구매 기록", systemImage: "cart")
-                        }
-                        Button { showSaleSheet = true } label: {
-                            Label("판매 기록", systemImage: "tag")
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .task {
                 await viewModel.loadEvents(for: viewModel.selectedDate)
                 await viewModel.loadClothingList()
@@ -662,11 +656,21 @@ struct EditSaleSheet: View {
 }
 
 private struct CalendarEmptyStateView: View {
+    let onAddOutfit: () -> Void
+    let onAddPurchase: () -> Void
+    let onAddSale: () -> Void
+
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: "calendar.badge.plus")
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary)
+            Menu {
+                Button { onAddOutfit() } label: { Label("착용 기록 ", systemImage: "tshirt") }
+                Button { onAddPurchase() } label: { Label("구매 기록", systemImage: "cart") }
+                Button { onAddSale() } label: { Label("판매 기록", systemImage: "tag") }
+            } label: {
+                Image(systemName: "calendar.badge.plus")
+                    .font(.system(size: 48))
+                    .foregroundStyle(Color.accentColor)
+            }
             Text("기록 없음")
                 .font(.headline)
             Text("이 날의 기록이 없습니다.")
