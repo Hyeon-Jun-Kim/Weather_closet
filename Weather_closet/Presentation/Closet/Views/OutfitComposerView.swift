@@ -66,7 +66,16 @@ struct OutfitTextItem: Identifiable {
     var offset: CGSize = .zero
     var scale: CGFloat = 1.0
     var rotation: Angle = .zero
+    var alignmentRaw: Int = 1  // 0=leading, 1=center, 2=trailing
+    var fontDesignRaw: Int = 0 // 0=default, 1=serif, 2=monospaced, 3=rounded
+    var isBold: Bool = false
     var color: Color { textColorPalette[colorIndex] }
+    var textAlignment: TextAlignment {
+        switch alignmentRaw { case 0: return .leading; case 2: return .trailing; default: return .center }
+    }
+    var fontDesign: Font.Design {
+        switch fontDesignRaw { case 1: return .serif; case 2: return .monospaced; case 3: return .rounded; default: return .default }
+    }
 }
 
 // MARK: - Outfit Composer View
@@ -98,6 +107,10 @@ struct OutfitComposerView: View {
     @State private var liveEditText = ""
     @State private var liveColorIndex = 0
     @State private var liveFontScale: CGFloat = 1.0
+    @State private var liveAlignment: Int = 1
+    @State private var liveFontDesign: Int = 0
+    @State private var liveIsBold: Bool = false
+    @State private var isNeedleExpanded = false
     @FocusState private var textFieldFocused: Bool
 
     var body: some View {
@@ -105,7 +118,7 @@ struct OutfitComposerView: View {
             mainContent
                 .background {
                     PresentationInterceptor(
-                        canDismiss: items.isEmpty && textItems.isEmpty,
+                        canDismiss: false,
                         onAttempt: { showDiscardAlert = true }
                     )
                 }
@@ -138,7 +151,7 @@ struct OutfitComposerView: View {
                     .onAppear { canvasSize = CGSize(width: cw, height: ch) }
                     .onChange(of: geo.size) { _, _ in canvasSize = CGSize(width: cw, height: ch) }
             }
-            if isTextEditing { colorPaletteBar }
+            if isTextEditing { textEditingToolbar }
         }
         .overlay(alignment: .bottom) {
             if draggingItemID != nil { deleteZoneOverlay }
@@ -163,8 +176,7 @@ struct OutfitComposerView: View {
                 Button("취소") { cancelTextEditing() }
             } else {
                 Button("닫기") {
-                    if items.isEmpty && textItems.isEmpty { dismiss() }
-                    else { showDiscardAlert = true }
+                    showDiscardAlert = true
                 }
             }
         }
@@ -234,21 +246,21 @@ struct OutfitComposerView: View {
             if isTextEditing {
                 Color.black.opacity(0.5).allowsHitTesting(true)
 
-                // 좌측 폰트 크기 슬라이더
-                HStack(spacing: 0) {
-                    FontSizeNeedle(scale: $liveFontScale)
-                        .frame(width: 18, height: height * 0.72)
-                        .padding(.leading, 8)
-                    Spacer()
+                // 트랙 바: needle이 펼쳐지면 숨김
+                if !isNeedleExpanded {
+                    TrackBarShape(maxWidth: 10)
+                        .fill(Color.white.opacity(0.9))
+                        .frame(width: 13, height: height)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .allowsHitTesting(false)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 // 텍스트 입력 필드
                 TextField("텍스트", text: $liveEditText, axis: .vertical)
                     .focused($textFieldFocused)
-                    .font(.system(size: 28 * liveFontScale, weight: .semibold))
+                    .font(.system(size: 28 * liveFontScale, weight: liveIsBold ? .bold : .semibold, design: liveTextAlignmentValue.1))
                     .foregroundStyle(textColorPalette[liveColorIndex])
-                    .multilineTextAlignment(.center)
+                    .multilineTextAlignment(liveTextAlignmentValue.0)
                     .tint(.white)
                     .lineLimit(1...5)
                     .padding(.leading, 52)
@@ -257,7 +269,7 @@ struct OutfitComposerView: View {
 
         }
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: isTextEditing ? 0 : 12))
         .contentShape(Rectangle())
         .onTapGesture { if !isTextEditing { selectedTextID = nil } }
         // clipShape 이후 overlay → 클리핑 없이 항상 최상단 표시
@@ -297,9 +309,25 @@ struct OutfitComposerView: View {
                     .padding(10)
             }
         }
+        // 폰트 크기 슬라이더: clipShape 바깥 overlay → 왼쪽으로 숨을 수 있음
+        .overlay(alignment: .topLeading) {
+            if isTextEditing {
+                FontSizeNeedle(scale: $liveFontScale, isExpanded: $isNeedleExpanded)
+                    .frame(width: 24, height: height)
+            }
+        }
     }
 
     // MARK: - Color Palette Bar
+
+    // (TextAlignment, Font.Design) 튜플 — TextField와 toolbar 양쪽에서 사용
+    private var liveTextAlignmentValue: (TextAlignment, Font.Design) {
+        let a: TextAlignment
+        switch liveAlignment { case 0: a = .leading; case 2: a = .trailing; default: a = .center }
+        let d: Font.Design
+        switch liveFontDesign { case 1: d = .serif; case 2: d = .monospaced; case 3: d = .rounded; default: d = .default }
+        return (a, d)
+    }
 
     private var colorPaletteBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -318,6 +346,56 @@ struct OutfitComposerView: View {
             .padding(.horizontal, 16).padding(.vertical, 14)
         }
         .background(Color(uiColor: .systemBackground))
+    }
+
+    private var textEditingToolbar: some View {
+        VStack(spacing: 0) {
+            colorPaletteBar
+            Divider()
+            HStack(spacing: 0) {
+                // Aa — 폰트 디자인 순환
+                Button {
+                    liveFontDesign = (liveFontDesign + 1) % 4
+                } label: {
+                    Text("Aa")
+                        .font(.system(size: 17, weight: .semibold, design: liveTextAlignmentValue.1))
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                }
+
+                // 색상 — 현재 선택 색상 원 (팔레트는 위에 표시)
+                Circle()
+                    .fill(textColorPalette[liveColorIndex])
+                    .frame(width: 26, height: 26)
+                    .overlay(Circle().stroke(Color.primary.opacity(0.25), lineWidth: 1))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+
+                // 정렬 — 순환
+                Button {
+                    liveAlignment = (liveAlignment + 1) % 3
+                } label: {
+                    Image(systemName: ["text.alignleft", "text.aligncenter", "text.alignright"][liveAlignment])
+                        .font(.system(size: 18))
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                }
+
+                // 굵기 토글
+                Button {
+                    liveIsBold.toggle()
+                } label: {
+                    Text("B")
+                        .font(.system(size: 20, weight: liveIsBold ? .bold : .regular))
+                        .foregroundStyle(liveIsBold ? .primary : .secondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                }
+            }
+            .background(Color(uiColor: .secondarySystemBackground))
+        }
     }
 
     // MARK: - Delete Zone Overlay
@@ -458,11 +536,17 @@ struct OutfitComposerView: View {
             liveEditText = item.text
             liveColorIndex = item.colorIndex
             liveFontScale = item.scale
+            liveAlignment = item.alignmentRaw
+            liveFontDesign = item.fontDesignRaw
+            liveIsBold = item.isBold
         } else {
             editingTextID = nil
             liveEditText = ""
             liveColorIndex = 0
             liveFontScale = 1.0
+            liveAlignment = 1
+            liveFontDesign = 0
+            liveIsBold = false
         }
         isTextEditing = true
         textFieldFocused = true
@@ -476,11 +560,17 @@ struct OutfitComposerView: View {
                 textItems[idx].text = t
                 textItems[idx].colorIndex = liveColorIndex
                 textItems[idx].scale = liveFontScale
+                textItems[idx].alignmentRaw = liveAlignment
+                textItems[idx].fontDesignRaw = liveFontDesign
+                textItems[idx].isBold = liveIsBold
             } else {
-                let item = OutfitTextItem(
+                var item = OutfitTextItem(
                     id: UUID(), text: t,
                     colorIndex: liveColorIndex, scale: liveFontScale
                 )
+                item.alignmentRaw = liveAlignment
+                item.fontDesignRaw = liveFontDesign
+                item.isBold = liveIsBold
                 textItems.insert(item, at: 0)
                 selectedTextID = item.id
             }
@@ -490,6 +580,7 @@ struct OutfitComposerView: View {
 
     private func cancelTextEditing() {
         isTextEditing = false
+        isNeedleExpanded = false
         editingTextID = nil
         liveEditText = ""
         textFieldFocused = false
@@ -773,9 +864,9 @@ struct CanvasTextItem: View {
 
     var body: some View {
         Text(item.text)
-            .font(.system(size: item.fontSize * currentScale, weight: .semibold))
+            .font(.system(size: item.fontSize * currentScale, weight: item.isBold ? .bold : .semibold, design: item.fontDesign))
             .foregroundStyle(item.color)
-            .multilineTextAlignment(.center)
+            .multilineTextAlignment(item.textAlignment)
             .padding(.horizontal, 8).padding(.vertical, 6)
             .overlay {
                 if isSelected {
@@ -923,14 +1014,14 @@ struct ClothingPickerSheet: View {
 
 private struct FontSizeNeedle: View {
     @Binding var scale: CGFloat
+    @Binding var isExpanded: Bool
 
     private let minScale: CGFloat = 0.5
     private let maxScale: CGFloat = 3.0
-    private let knobDiameter: CGFloat = 28
+    private let knobDiameter: CGFloat = 32
 
     private func knobY(in height: CGFloat) -> CGFloat {
         let t = (scale - minScale) / (maxScale - minScale)
-        // t=1 (max) → top, t=0 (min) → bottom
         return height * (1 - t)
     }
 
@@ -938,34 +1029,72 @@ private struct FontSizeNeedle: View {
         GeometryReader { geo in
             let h = geo.size.height
             let w = geo.size.width
-            let ky = knobY(in: h)
+            let ky = max(knobY(in: h), knobDiameter / 2)
 
             ZStack {
-                // Isosceles triangle: wide at top, point at bottom-center
-                Path { p in
-                    p.move(to: CGPoint(x: 0, y: 0))
-                    p.addLine(to: CGPoint(x: w, y: 0))
-                    p.addLine(to: CGPoint(x: w / 2, y: h))
-                    p.closeSubpath()
-                }
-                .fill(Color.white.opacity(0.9))
+                // 전체 needle: 드래그 시작 시 슬라이드 인
+                ZStack {
+                    Path { p in
+                        p.move(to: CGPoint(x: 0, y: 0))
+                        p.addLine(to: CGPoint(x: w, y: 0))
+                        p.addLine(to: CGPoint(x: w / 2, y: h))
+                        p.closeSubpath()
+                    }
+                    .fill(Color.white.opacity(0.92))
 
-                // Draggable knob
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: knobDiameter, height: knobDiameter)
+                        .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                        .position(x: w / 2, y: ky)
+                }
+                .offset(x: isExpanded ? 0 : -(w + knobDiameter))
+                .opacity(isExpanded ? 1 : 0)
+
+                // 평소 표시: 반원 인디케이터 (트랙 바는 canvas clipShape 안쪽에 렌더링)
                 Circle()
                     .fill(Color.white)
                     .frame(width: knobDiameter, height: knobDiameter)
-                    .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
-                    .position(x: w / 2, y: ky)
+                    .mask {
+                        HStack(spacing: 0) {
+                            Color.clear.frame(width: knobDiameter / 2)
+                            Color.black.frame(width: knobDiameter / 2)
+                        }
+                    }
+                    .shadow(color: .black.opacity(0.25), radius: 3, x: 2, y: 0)
+                    .position(x: 0, y: ky)
+                    .opacity(isExpanded ? 0 : 1)
             }
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
+                        if !isExpanded {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                isExpanded = true
+                            }
+                        }
                         let newT = 1 - value.location.y / h
-                        let clamped = min(max(newT, 0), 1)
-                        scale = minScale + clamped * (maxScale - minScale)
+                        scale = minScale + min(max(newT, 0), 1) * (maxScale - minScale)
+                    }
+                    .onEnded { _ in
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            isExpanded = false
+                        }
                     }
             )
         }
+    }
+}
+
+private struct TrackBarShape: Shape {
+    let maxWidth: CGFloat
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: 0, y: rect.minY))
+        p.addLine(to: CGPoint(x: maxWidth, y: rect.minY))
+        p.addLine(to: CGPoint(x: 0, y: rect.maxY))
+        p.closeSubpath()
+        return p
     }
 }
